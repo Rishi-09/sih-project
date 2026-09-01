@@ -1,0 +1,129 @@
+// Twin system data model — see the published plan (§B3) and ml_procedure.md.
+// SQLite for dev; swap provider/url to Postgres for deploy, schema is portable.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Engine {
+  id    String @id @default(cuid())
+  tail  String @unique // e.g. "UAV-01"
+  model String // e.g. "Rotax 915 iS, 4-cyl boxer, turbo, FADEC"
+  runs  Run[]
+}
+
+model Run {
+  id              String    @id @default(cuid())
+  engineId        String
+  scenario        String // S1..S6 or "custom"
+  seed            Int
+  contractVersion String
+  missionProfile  String // JSON-encoded (SQLite has no native Json type)
+  status          String // starting | live | degraded | replay | stopped
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+
+  frames   Frame[]
+  alerts   Alert[]
+  reports  Report[]
+  messages ChatMessage[]
+  engine   Engine        @relation(fields: [engineId], references: [id])
+
+  @@index([engineId, startedAt])
+}
+
+model Frame {
+  id    Int      @id @default(autoincrement())
+  runId String
+  t     Int
+  ts    DateTime
+  phase String
+
+  rpm     Float
+  mapKpa  Float
+  egt1    Float
+  egt2    Float
+  egt3    Float
+  egt4    Float
+  cht1    Float // derived/modeled estimate, not a raw sensor — see contract/sensors.json
+  cht2    Float
+  cht3    Float
+  cht4    Float
+  oilPressBar  Float
+  oilTempC     Float
+  coolantTempC Float
+  fuelFlowLph  Float
+  fuelPressBar Float
+  injTimingDeg Float
+  vibRmsG      Float
+  busVoltageV  Float
+  altCurrentA  Float
+
+  context   String // JSON-encoded FlightContext
+  residualZ String // JSON-encoded Record<string, number>
+  health    String // JSON-encoded HealthBlock
+  ehi       Float // duplicated out of `health` for fast charting
+
+  faultLabel         String?
+  confidence         Float?
+  rulSec             Int?
+  pSuccess           Float?
+  sensorFaultChannel String?
+  sensorFaultMode    String?
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, t])
+}
+
+model Alert {
+  id          String    @id @default(cuid())
+  runId       String
+  t           Int
+  code        String
+  severity    String
+  channel     String
+  message     String
+  clearedAtT  Int?
+  ackedAt     DateTime?
+  createdAt   DateTime  @default(now())
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, t])
+}
+
+model Report {
+  id        String   @id @default(cuid())
+  runId     String
+  kind      String // advisory | debrief
+  contentMd String
+  source    String // llm | offline
+  model     String?
+  createdAt DateTime @default(now())
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  runId     String
+  role      String // user | assistant
+  content   String
+  createdAt DateTime @default(now())
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+}
+
+model ModelVersion {
+  id        String   @id @default(cuid())
+  name      String
+  version   String
+  metrics   String // JSON-encoded
+  createdAt DateTime @default(now())
+}
