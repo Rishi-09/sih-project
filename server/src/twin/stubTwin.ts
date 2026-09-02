@@ -358,9 +358,11 @@ export class TwinRun {
       lubrication: round2(scoreFor(SUBSYSTEMS.lubrication)),
       cooling: round2(scoreFor(SUBSYSTEMS.cooling)),
       combustion: round2(scoreFor(SUBSYSTEMS.combustion)),
-      inductionFuel: round2(scoreFor(SUBSYSTEMS.induction_fuel)),
+      fuel: round2(scoreFor(SUBSYSTEMS.fuel)),
       mechanical: round2(scoreFor(SUBSYSTEMS.mechanical)),
+      induction: round2(scoreFor(SUBSYSTEMS.induction)),
       electrical: round2(scoreFor(SUBSYSTEMS.electrical)),
+      injection: round2(scoreFor(SUBSYSTEMS.injection)),
     };
     const values = Object.values(subsystems);
     const ehi = round2(0.6 * Math.min(...values) + 0.4 * (values.reduce((a, b) => a + b, 0) / values.length));
