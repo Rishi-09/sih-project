@@ -16,15 +16,20 @@ export interface FlightContext {
   throttle_pct: number;
 }
 
+// 8 categories — matches Retribution's ML/docs/ML_BACKEND_HANDOFF.md §4
+// subsystem_scores exactly (source of truth); induction_fuel split into
+// induction/fuel/injection.
 export interface HealthBlock {
   ehi: number;
   subsystems: {
     lubrication: number;
     cooling: number;
     combustion: number;
-    inductionFuel: number;
+    fuel: number;
     mechanical: number;
+    induction: number;
     electrical: number;
+    injection: number;
   };
 }
 

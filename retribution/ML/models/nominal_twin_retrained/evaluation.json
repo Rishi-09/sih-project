@@ -1,0 +1,168 @@
+{
+  "model_name": "Model 1 Nominal Digital Twin (Retrained runs_v3)",
+  "evaluation_date_time": "2026-09-01T13:26:26Z",
+  "test_flight_ids": [
+    "flight_0004",
+    "flight_0013",
+    "flight_0014",
+    "flight_0016",
+    "flight_0017",
+    "flight_0023",
+    "flight_0024",
+    "flight_0036",
+    "flight_0041",
+    "flight_0045",
+    "flight_0048",
+    "flight_0050",
+    "flight_0052",
+    "flight_0053",
+    "flight_0058",
+    "flight_0064",
+    "flight_0072",
+    "flight_0080",
+    "flight_0082",
+    "flight_0084",
+    "flight_0099",
+    "flight_0102",
+    "flight_0108",
+    "flight_0111",
+    "flight_0112",
+    "flight_0113",
+    "flight_0115",
+    "flight_0117",
+    "flight_0120",
+    "flight_0126",
+    "flight_0136",
+    "flight_0141",
+    "flight_0143",
+    "flight_0149",
+    "flight_0151",
+    "flight_0173",
+    "flight_0175",
+    "flight_0177",
+    "flight_0182",
+    "flight_0184",
+    "flight_0186",
+    "flight_0187",
+    "flight_0190",
+    "flight_0194",
+    "flight_0195",
+    "flight_0215",
+    "flight_0217",
+    "flight_0230",
+    "flight_0233",
+    "flight_0236",
+    "flight_0259",
+    "flight_0275",
+    "flight_0280",
+    "flight_0283",
+    "flight_0288",
+    "flight_0296",
+    "flight_0302",
+    "flight_0303",
+    "flight_0309",
+    "flight_0310",
+    "flight_0317",
+    "flight_0322",
+    "flight_0328",
+    "flight_0333",
+    "flight_0343",
+    "flight_0347",
+    "flight_0354",
+    "flight_0358",
+    "flight_0360",
+    "flight_0366",
+    "flight_0367",
+    "flight_0372",
+    "flight_0378",
+    "flight_0380",
+    "flight_0382",
+    "flight_0385",
+    "flight_0388",
+    "flight_0389",
+    "flight_0391",
+    "flight_0397"
+  ],
+  "n_test_flights": 80,
+  "n_test_rows": 269880,
+  "overall_mean_mae": 1.1089094964588475,
+  "overall_mean_rmse": 2.3469927072378023,
+  "metrics_per_sensor": {
+    "rpm": {
+      "mae": 7.777833197440443,
+      "rmse": 26.63886656187231
+    },
+    "vib_rms_g": {
+      "mae": 0.01010434361171385,
+      "rmse": 0.01268531596493787
+    },
+    "egt_1": {
+      "mae": 2.8136808706921,
+      "rmse": 3.53755124697581
+    },
+    "egt_2": {
+      "mae": 2.817447072626451,
+      "rmse": 3.539136032613636
+    },
+    "egt_3": {
+      "mae": 2.8244027667869616,
+      "rmse": 3.5483353688213417
+    },
+    "egt_4": {
+      "mae": 2.801418388695359,
+      "rmse": 3.5207122160377984
+    },
+    "cht_1": {
+      "mae": 0.18317119649768962,
+      "rmse": 0.42424638828129185
+    },
+    "cht_2": {
+      "mae": 0.18146915691277754,
+      "rmse": 0.42218917711307336
+    },
+    "cht_3": {
+      "mae": 0.18042264664007193,
+      "rmse": 0.42121368035775525
+    },
+    "cht_4": {
+      "mae": 0.1860414473812888,
+      "rmse": 0.42436068458404924
+    },
+    "coolant_temp_c": {
+      "mae": 0.23055737697724882,
+      "rmse": 0.44036384164277964
+    },
+    "oil_press_bar": {
+      "mae": 0.03248606705992597,
+      "rmse": 0.047238223595303726
+    },
+    "oil_temp_c": {
+      "mae": 0.2651294022282236,
+      "rmse": 0.5019315616305526
+    },
+    "map_kpa": {
+      "mae": 0.25964936195692806,
+      "rmse": 0.416509481012769
+    },
+    "fuel_flow_lph": {
+      "mae": 0.17133356706890088,
+      "rmse": 0.2523632796111667
+    },
+    "fuel_press_bar": {
+      "mae": 0.016125230799211045,
+      "rmse": 0.020406517619482055
+    },
+    "inj_timing_deg": {
+      "mae": 0.07011908967391528,
+      "rmse": 0.08559472865993897
+    },
+    "bus_voltage_v": {
+      "mae": 0.04289952130127523,
+      "rmse": 0.05181462615168625
+    },
+    "alt_current_a": {
+      "mae": 0.20498972836761564,
+      "rmse": 0.2873425049725535
+    }
+  }
+}

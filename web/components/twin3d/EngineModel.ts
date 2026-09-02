@@ -226,11 +226,20 @@ export class EngineModel {
     const isFaultActive = !!diagnosis && diagnosis.label !== "healthy";
     const faulted = isFaultActive ? EngineModel.faultedSubsystems(diagnosis.label) : new Set<string>();
 
+    // health.subsystems has 8 categories (matches the real ML pipeline);
+    // the 3D asset's mesh regions were built with 6 — induction/fuel/injection
+    // all live on the same physical "induction_fuel" mesh group (turbo
+    // wastegate, magneto valve, intake/coolant hoses), so its visual score is
+    // the worst of the three, same "min drags it down" convention as EHI.
     const scores: Record<string, number> = {
       lubrication: health.subsystems.lubrication ?? 100,
       cooling: health.subsystems.cooling ?? 100,
       combustion: health.subsystems.combustion ?? 100,
-      induction_fuel: health.subsystems.inductionFuel ?? 100,
+      induction_fuel: Math.min(
+        health.subsystems.induction ?? 100,
+        health.subsystems.fuel ?? 100,
+        health.subsystems.injection ?? 100,
+      ),
       mechanical: health.subsystems.mechanical ?? 100,
       electrical: health.subsystems.electrical ?? 100,
     };

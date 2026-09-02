@@ -22,11 +22,14 @@ export class FaultHighlighter {
     const pulse = isFault ? (Math.sin(this.pulseTime * 6.0) + 1.0) * 0.5 : 0;
 
     const health = frame?.health.subsystems;
+    // Same worst-of-three convention as EngineModel.updateFromFrame — the 3D
+    // asset's "induction_fuel" mesh group covers what the real ML now scores
+    // as three separate categories (induction/fuel/injection).
     const scores: Record<string, number> = {
       lubrication: health?.lubrication ?? 100,
       cooling: health?.cooling ?? 100,
       combustion: health?.combustion ?? 100,
-      induction_fuel: health?.inductionFuel ?? 100,
+      induction_fuel: Math.min(health?.induction ?? 100, health?.fuel ?? 100, health?.injection ?? 100),
       mechanical: health?.mechanical ?? 100,
       electrical: health?.electrical ?? 100,
     };

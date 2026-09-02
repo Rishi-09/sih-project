@@ -1,0 +1,45 @@
+{
+  "dataset": "data/runs_v3",
+  "n_test_flights": 300,
+  "n_test_windows": 994084,
+  "model_2_fault_classifier": {
+    "overall_accuracy": {
+      "baseline": 0.5740641635918091,
+      "retrained": 0.7957074050080275,
+      "change_pct": 38.60948923016536
+    },
+    "balanced_accuracy": {
+      "baseline": 0.12108814462022374,
+      "retrained": 0.5163462947321493,
+      "change_pct": 326.42184034745776
+    },
+    "macro_f1": {
+      "baseline": 0.07486093045501273,
+      "retrained": 0.4711071981837371,
+      "change_pct": 529.3098353444143
+    },
+    "weighted_f1": {
+      "baseline": 0.5090586890217301,
+      "retrained": 0.7876566522534985
+    }
+  },
+  "model_3_anomaly_detector": {
+    "precision": {
+      "baseline": 0.6966254091268199,
+      "retrained": 0.7126813880126183
+    },
+    "recall": {
+      "baseline": 0.08962180440695795,
+      "retrained": 0.009112058312010557
+    },
+    "f1_score": {
+      "baseline": 0.15881220330454943,
+      "retrained": 0.0179940518953809,
+      "change_pct": -88.66960377038896
+    },
+    "healthy_false_positive_rate_pct": {
+      "baseline": 6.46419734613062,
+      "retrained": 0.6084233365219669
+    }
+  }
+}

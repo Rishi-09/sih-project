@@ -1,0 +1,13 @@
+{
+  "created_at": "2026-09-01T13:40:36Z",
+  "model_type": "IsolationForest",
+  "n_features": 76,
+  "n_training_samples": 1368937,
+  "contamination": 0.01,
+  "n_estimators": 150,
+  "random_state": 42,
+  "dataset": "data/runs_v3",
+  "twin_source": "ML/models/nominal_twin_retrained",
+  "residual_stats_source": "ML/data/processed/residuals/healthy_residual_stats_v3.json",
+  "training_runtime_sec": 5.48
+}
