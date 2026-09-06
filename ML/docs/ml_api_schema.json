@@ -1,0 +1,128 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "R2 Engine ML Inference API Schema",
+  "description": "Formal contract definition for R2 ML engine diagnostic inference interface.",
+  "type": "object",
+  "definitions": {
+    "TelemetryWindow": {
+      "type": "array",
+      "minItems": 60,
+      "description": "At least 60 consecutive 1-second telemetry rows.",
+      "items": {
+        "type": "object",
+        "required": [
+          "throttle_pct",
+          "alt_m",
+          "oat_c",
+          "ias_kt",
+          "phase",
+          "rpm",
+          "vib_rms_g",
+          "egt_1",
+          "egt_2",
+          "egt_3",
+          "egt_4",
+          "cht_1",
+          "cht_2",
+          "cht_3",
+          "cht_4",
+          "coolant_temp_c",
+          "oil_press_bar",
+          "oil_temp_c",
+          "map_kpa",
+          "fuel_flow_lph",
+          "fuel_press_bar",
+          "inj_timing_deg",
+          "bus_voltage_v",
+          "alt_current_a"
+        ],
+        "properties": {
+          "throttle_pct": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+          "alt_m": { "type": "number" },
+          "oat_c": { "type": "number" },
+          "ias_kt": { "type": "number", "minimum": 0.0 },
+          "phase": { "type": "string" },
+          "rpm": { "type": "number", "minimum": 0.0 },
+          "vib_rms_g": { "type": "number", "minimum": 0.0 },
+          "egt_1": { "type": "number" },
+          "egt_2": { "type": "number" },
+          "egt_3": { "type": "number" },
+          "egt_4": { "type": "number" },
+          "cht_1": { "type": "number" },
+          "cht_2": { "type": "number" },
+          "cht_3": { "type": "number" },
+          "cht_4": { "type": "number" },
+          "coolant_temp_c": { "type": "number" },
+          "oil_press_bar": { "type": "number" },
+          "oil_temp_c": { "type": "number" },
+          "map_kpa": { "type": "number" },
+          "fuel_flow_lph": { "type": "number" },
+          "fuel_press_bar": { "type": "number" },
+          "inj_timing_deg": { "type": "number" },
+          "bus_voltage_v": { "type": "number" },
+          "alt_current_a": { "type": "number" }
+        }
+      }
+    },
+    "DiagnosticResponse": {
+      "type": "object",
+      "required": [
+        "health_score",
+        "subsystem_scores",
+        "fault_type",
+        "confidence",
+        "anomaly",
+        "anomaly_score",
+        "decision_score",
+        "remaining_useful_life",
+        "explanations",
+        "probabilities"
+      ],
+      "properties": {
+        "health_score": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+        "subsystem_scores": {
+          "type": "object",
+          "required": [
+            "lubrication",
+            "cooling",
+            "combustion",
+            "fuel",
+            "mechanical",
+            "induction",
+            "electrical",
+            "injection"
+          ],
+          "properties": {
+            "lubrication": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+            "cooling": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+            "combustion": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+            "fuel": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+            "mechanical": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+            "induction": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+            "electrical": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+            "injection": { "type": "number", "minimum": 0.0, "maximum": 100.0 }
+          }
+        },
+        "fault_type": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "anomaly": { "type": "boolean" },
+        "anomaly_score": { "type": "number" },
+        "decision_score": { "type": "number" },
+        "remaining_useful_life": { "type": ["number", "null"], "minimum": 0.0 },
+        "explanations": {
+          "type": "object",
+          "required": ["health_overall", "subsystems", "rul"],
+          "properties": {
+            "health_overall": { "type": "string" },
+            "subsystems": { "type": "object" },
+            "rul": { "type": "string" }
+          }
+        },
+        "probabilities": {
+          "type": "object",
+          "additionalProperties": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+        }
+      }
+    }
+  }
+}
