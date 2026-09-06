@@ -1,0 +1,22 @@
+{
+  "created_at": "2026-09-06T11:07:01+00:00",
+  "reason": "previous 91-class artifact diverged (l2_regularization=0.0 with class_weight=balanced)",
+  "l2_regularization": 1.0,
+  "learning_rate": 0.06,
+  "max_iter": 200,
+  "min_samples_leaf": 40,
+  "iterations_kept": 83,
+  "max_leaf_value_last_iter": 0.04560901922167034,
+  "n_train_windows": 107555,
+  "n_test_windows": 27496,
+  "n_train_flights": 320,
+  "n_test_flights": 80,
+  "window_stride": 10,
+  "residual_domain": "training",
+  "metrics": {
+    "accuracy": 0.8419042769857433,
+    "balanced_accuracy": 0.6570617921114337,
+    "macro_f1": 0.3473308621662234,
+    "weighted_f1": 0.8194505606932957
+  }
+}

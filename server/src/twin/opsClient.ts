@@ -1,9 +1,10 @@
 import WebSocket from "ws";
 import {
-  TickFrame, FlightContext, HealthBlock, DiagnosisBlock, PrognosisBlock, MissionBlock,
-  FaultRequest, ENGINE_CHANNELS, CONTRACT_VERSION,
+  TickFrame, FlightContext, HealthBlock, DiagnosisBlock, PrognosisBlock,
+  FaultRequest, MissionProfile, ENGINE_CHANNELS, CONTRACT_VERSION,
 } from "../types";
 import { SENSOR_FAULT_BY_ID } from "./contract";
+import { PENDING_MISSION } from "./reliability";
 
 /**
  * WebSocket CLIENT for Retribution's server_ops (retribution/run_ws_only.py,
@@ -26,8 +27,42 @@ import { SENSOR_FAULT_BY_ID } from "./contract";
 
 const OPS_WS_URL = process.env.OPS_WS_URL || "ws://localhost:8766";
 const MIN_SIM_DT = 1.0; // seconds — downsample threshold
-const TRANSITION_GRACE_SEC = 20; // hold the displayed label through our own scripted throttle/altitude steps
-const LABEL_CONFIDENCE_FLOOR = 0.55; // a weak argmax doesn't get to spend hysteresis votes
+const TRANSITION_GRACE_SEC = 20; // hold the displayed verdict through our own scripted throttle/altitude steps
+
+/**
+ * Schmitt-trigger band on P(healthy) — the two thresholds that decide whether
+ * the engine is being called FAULTED or HEALTHY.
+ *
+ * Hysteresis belongs on this binary verdict, not on the exact class string.
+ * The previous version required the identical 91-class label — compound labels
+ * included — to win two consecutive evaluations before it would commit. With
+ * dozens of compound classes the argmax legitimately alternates between
+ * neighbouring ones (injector+lubrication on one evaluation, injector+cooling
+ * on the next), so the vote never carried and the display stayed pinned at
+ * "healthy" indefinitely, reporting "Healthy, confidence 0%" while the
+ * classifier was 100% sure a compound injector fault was present. WHICH
+ * compound class wins is a detail; whether ANY fault is present is the
+ * decision, and that is stable.
+ */
+const FAULT_ENTER_P_HEALTHY = 0.4; // P(healthy) below this -> declare faulted
+const FAULT_EXIT_P_HEALTHY = 0.6; // ...and it must climb back above this to clear
+
+/**
+ * Phases in which no health or diagnosis is published at all.
+ *
+ * The models are trained on a running, settled engine. Through start and taxi
+ * the engine is going from stationary to idle to full power, every thermal
+ * channel is far from its steady state, and the twin's prediction is
+ * meaningless — measured live, it reported EHI 13.4 on a perfectly healthy
+ * takeoff. That is not a health assessment, it is the model being asked a
+ * question it cannot answer.
+ *
+ * Real engine monitors inhibit predictive diagnostics through start and
+ * take-off for exactly this reason. Reporting "assessing" is the honest
+ * output; a fabricated 13.4 trains the operator to ignore the display.
+ */
+const UNSTABLE_PHASES = new Set(["startup", "taxi"]);
+const ASSESSING_LABEL = "assessing";
 
 /**
  * OpsEngineSim is player-flown — throttle starts at 0% and only moves when a
@@ -44,15 +79,80 @@ const LABEL_CONFIDENCE_FLOOR = 0.55; // a weak argmax doesn't get to spend hyste
  * ops_context.py do the rest each tick, so this only needs to fire a handful
  * of times per flight, not every tick.
  */
-const AUTOPILOT_SCHEDULE: { atSimT: number; input: Record<string, unknown> }[] = [
+const CRUISE_ALT_M = 3000;
+const CRUISE_POWER_PCT = 68;
+
+/**
+ * A step fires once `atSimT` is reached AND its optional `when` predicate holds.
+ *
+ * The level-off step needs the predicate. It used to fire at a fixed simulated
+ * time (500 s) picked to be "once near target altitude", which left the
+ * aircraft holding 88% climb power in level flight for roughly 200 seconds. The
+ * phase machine labels level flight CRUISE, so that produced a sustained
+ * CRUISE-at-88%-throttle state — an operating point that appears NOWHERE in the
+ * nominal twin's training data, where CRUISE always meant 65-70%. The twin then
+ * extrapolates, its residuals go to several sigma on a perfectly healthy
+ * engine, and the health score collapses. Reducing power when the aircraft is
+ * actually level keeps the flight inside the envelope the model was trained on.
+ */
+interface AutopilotStep {
+  atSimT: number;
+  when?: (state: { altM: number }) => boolean;
+  input: Record<string, unknown>;
+}
+
+const AUTOPILOT_SCHEDULE: AutopilotStep[] = [
   { atSimT: 0, input: { throttle: 20, gear: true, autopilot: false } },
   { atSimT: 8, input: { throttle: 95 } }, // taxi -> takeoff roll
-  { atSimT: 25, input: { throttle: 88, autopilot: true, ap_target_alt: 3000, gear: false } }, // climb out
-  { atSimT: 500, input: { throttle: 68 } }, // cruise power once near target altitude
+  { atSimT: 25, input: { throttle: 88, autopilot: true, ap_target_alt: CRUISE_ALT_M, gear: false } }, // climb out
+  {
+    // Cruise power on level-off, not on the clock. The atSimT floor only stops
+    // it firing during the initial ground roll; the altitude predicate is what
+    // actually releases it, and the schedule cannot stall because a step is
+    // skipped if the aircraft never gets there (see fireDueAutopilotSteps).
+    atSimT: 120,
+    when: ({ altM }) => altM >= CRUISE_ALT_M * 0.97,
+    input: { throttle: CRUISE_POWER_PCT },
+  },
   { atSimT: 1400, input: { ap_target_alt: 150, throttle: 45 } }, // begin descent
   { atSimT: 1650, input: { throttle: 15, gear: true } }, // approach
   { atSimT: 1700, input: { throttle: 0, autopilot: false } }, // shutdown
 ];
+
+/**
+ * The autopilot schedule expressed as a MissionProfile, for the reliability
+ * engine to project against.
+ *
+ * Without this the engine projected the ops flight against its own
+ * DEFAULT_MISSION — legs at 20/95/85/70/55/40/25% totalling 1650 s — while the
+ * aircraft was actually flying the schedule above. Every leg's power was wrong,
+ * so was the time remaining, and the projection duly extrapolated healthy
+ * channels to power settings the sortie would never visit and called
+ * "land immediately" on a healthy engine.
+ *
+ * Derived from AUTOPILOT_SCHEDULE rather than restated, so the two cannot drift
+ * apart. The altitude-gated level-off is placed at its nominal time, which is
+ * the best available estimate before the climb has happened.
+ */
+export function opsMissionProfile(): MissionProfile {
+  const NOMINAL_LEVEL_OFF_SIM_T = 300; // typical time to reach CRUISE_ALT_M
+  const marks = AUTOPILOT_SCHEDULE.map((step, i) => ({
+    atSimT: step.when ? NOMINAL_LEVEL_OFF_SIM_T : step.atSimT,
+    throttle: typeof step.input.throttle === "number" ? (step.input.throttle as number) : null,
+    i,
+  }))
+    .filter((m) => m.throttle !== null)
+    .sort((a, b) => a.atSimT - b.atSimT);
+
+  const legs = [];
+  for (let k = 0; k < marks.length; k++) {
+    const start = marks[k].atSimT;
+    const end = k + 1 < marks.length ? marks[k + 1].atSimT : start;
+    const durationSec = Math.max(1, Math.round(end - start));
+    if (k + 1 < marks.length) legs.push({ durationSec, powerPct: marks[k].throttle as number });
+  }
+  return { legs };
+}
 
 interface OpsTelemetry {
   t_s: number;
@@ -82,17 +182,12 @@ export class OpsClient {
   private lastBuiltSimT = -Infinity;
   private connected = false;
 
-  // Label hysteresis: the real classifier re-evaluates every 5 simulated
-  // seconds and isn't perfect — a single evaluation can briefly show a
-  // different (sometimes compound) label before settling. Only commit a new
-  // *displayed* label once it wins two evaluations in a row, so the console
-  // doesn't visibly flip on a single noisy reading. health_score,
-  // subsystem_scores, and the probability bars still update every
-  // evaluation — only diagnosis.label (and what's derived from it: cylinder,
-  // sensorFault) goes through this gate.
-  private displayedLabel = "healthy";
-  private pendingLabel: string | null = null;
-  private pendingCount = 0;
+  // Whether we are currently calling the engine faulted. ONLY this binary
+  // verdict is debounced (see the Schmitt band above); the specific class shown
+  // then follows the current argmax, so the label always agrees with the
+  // probability bars rendered beside it.
+  private faulted = false;
+  private injected: string[] = [];
   private autopilotIndex = 0;
   private lastAutopilotSimT = -Infinity;
   private latestSimT = 0;
@@ -154,13 +249,13 @@ export class OpsClient {
     }
     if (msg.type === "ml_result") {
       this.latestMl = msg.data as OpsMlResult;
-      this.updateDisplayedLabel(this.latestMl.fault_type, this.latestMl.confidence);
+      this.updateVerdict(this.latestMl);
       return;
     }
     if (msg.type === "telemetry") {
       const tel = msg.data as OpsTelemetry;
       this.latestSimT = Number(tel.t_s ?? 0);
-      this.fireDueAutopilotSteps(this.latestSimT);
+      this.fireDueAutopilotSteps(this.latestSimT, Number(tel.alt_m ?? 0));
       if (tel.t_s - this.lastBuiltSimT < MIN_SIM_DT) return;
       this.lastBuiltSimT = tel.t_s;
       this.latestFrame = this.buildTickFrame(tel);
@@ -172,21 +267,48 @@ export class OpsClient {
   /** Fires every AUTOPILOT_SCHEDULE entry whose atSimT has been reached —
    * checked on every telemetry message (20Hz), so a step never gets missed
    * even if simulated time jumps past it between checks at high speed
-   * multipliers. */
-  private fireDueAutopilotSteps(simT: number) {
-    while (this.autopilotIndex < AUTOPILOT_SCHEDULE.length && simT >= AUTOPILOT_SCHEDULE[this.autopilotIndex].atSimT) {
-      this.send({ type: "flight_input", controls: AUTOPILOT_SCHEDULE[this.autopilotIndex].input });
+   * multipliers. Altitude-gated steps additionally wait on the aircraft
+   * actually getting there — see AutopilotStep. */
+  private fireDueAutopilotSteps(simT: number, altM: number) {
+    while (this.autopilotIndex < AUTOPILOT_SCHEDULE.length) {
+      const step = AUTOPILOT_SCHEDULE[this.autopilotIndex];
+      if (simT < step.atSimT) return;
+      if (step.when && !step.when({ altM })) {
+        // Not ready yet, but a LATER step whose own time has come must not be
+        // blocked behind it — otherwise a climb that never quite reaches target
+        // altitude would strand the aircraft at climb power forever.
+        const next = AUTOPILOT_SCHEDULE[this.autopilotIndex + 1];
+        if (!next || simT < next.atSimT) return;
+        this.autopilotIndex += 1;
+        continue;
+      }
+      this.send({ type: "flight_input", controls: step.input });
       this.lastAutopilotSimT = simT;
       this.autopilotIndex += 1;
     }
   }
 
+  /**
+   * server_ops's FaultManager APPENDS to active_faults, so faults stack there
+   * exactly as they do in the stub — injecting a second one does not cancel the
+   * first. We keep our own ledger of what has been commanded because the
+   * classifier's label is a PREDICTION and may legitimately lag or disagree
+   * with it; showing both is what lets an operator tell "the model hasn't
+   * caught it yet" apart from "my injection didn't land".
+   */
   injectFault(req: FaultRequest) {
+    if (!this.injected.includes(req.type)) this.injected.push(req.type);
     this.send({ type: "inject_fault", fault: req.type, severity: req.severity, delay: req.onsetDelay ?? 0 });
   }
 
   clearFaults() {
+    this.injected = [];
+    this.faulted = false;
     this.send({ type: "clear_faults" });
+  }
+
+  injectedFaults(): string[] {
+    return [...this.injected];
   }
 
   setSpeed(multiplier: number) {
@@ -201,41 +323,56 @@ export class OpsClient {
     if (this.ws && this.connected) this.ws.send(JSON.stringify(obj));
   }
 
-  private updateDisplayedLabel(candidate: string, confidence: number) {
-    if (candidate === this.displayedLabel) {
-      this.pendingLabel = null;
-      this.pendingCount = 0;
+  /**
+   * Updates the faulted/healthy verdict from the classifier's own P(healthy).
+   *
+   * The transition grace window still applies to ENTERING the faulted state:
+   * we drive the throttle schedule ourselves, so we know when a legitimate
+   * transient is underway and the classifier's 60-second feature window is a
+   * pre/post-transition mix. It deliberately does NOT gate CLEARING a fault —
+   * delaying good news is safe, delaying bad news is not.
+   */
+  /**
+   * True while nothing publishable can be said: no classifier evaluation yet,
+   * an unsettled phase, or inside the grace window after one of our own
+   * scripted power changes.
+   */
+  private isAssessing(phase: string): boolean {
+    if (!this.latestMl) return true;
+    if (UNSTABLE_PHASES.has(phase.toLowerCase())) return true;
+    return this.latestSimT - this.lastAutopilotSimT < TRANSITION_GRACE_SEC;
+  }
+
+  private updateVerdict(ml: OpsMlResult) {
+    const pHealthy = ml.probabilities?.healthy ?? (ml.fault_type === "healthy" ? ml.confidence : 0);
+    if (this.faulted) {
+      if (pHealthy > FAULT_EXIT_P_HEALTHY) this.faulted = false;
       return;
     }
-    // Two targeted filters, both aimed at what a real test run actually
-    // showed (a momentary "induction_loss" reading during a scripted
-    // throttle step, not a real fault) rather than blanket dampening:
-    //
-    // 1. Transition grace window — we drive the throttle/altitude schedule
-    //    ourselves (fireDueAutopilotSteps), so we know exactly when a
-    //    legitimate, expected transient starts. The classifier's 60-second
-    //    feature window is guaranteed to be a pre/post-transition mix for a
-    //    while after one of our own scripted steps — don't let a new label
-    //    even start accumulating hysteresis votes during that window.
-    // 2. Confidence floor — a candidate that's only weakly ahead in a near-flat
-    //    distribution shouldn't get to spend hysteresis votes either.
     const inTransitionWindow = this.latestSimT - this.lastAutopilotSimT < TRANSITION_GRACE_SEC;
-    if (inTransitionWindow || confidence < LABEL_CONFIDENCE_FLOOR) {
-      this.pendingLabel = null;
-      this.pendingCount = 0;
-      return;
+    if (inTransitionWindow) return;
+    if (pHealthy < FAULT_ENTER_P_HEALTHY) this.faulted = true;
+  }
+
+  /**
+   * The class actually shown. When faulted, it is the highest-probability
+   * NON-healthy class, so the label and the probability bars beside it always
+   * describe the same thing.
+   */
+  private currentLabel(ml: OpsMlResult | null): string {
+    if (!this.faulted || !ml?.probabilities) return "healthy";
+    let best: string | null = null;
+    let bestP = -1;
+    for (const [k, v] of Object.entries(ml.probabilities)) {
+      if (k === "healthy") continue;
+      if (v > bestP) {
+        best = k;
+        bestP = v;
+      }
     }
-    if (this.pendingLabel === candidate) {
-      this.pendingCount += 1;
-    } else {
-      this.pendingLabel = candidate;
-      this.pendingCount = 1;
-    }
-    if (this.pendingCount >= 2) {
-      this.displayedLabel = candidate;
-      this.pendingLabel = null;
-      this.pendingCount = 0;
-    }
+    // Faulted, but the distribution carries no non-healthy class at all: report
+    // the anomaly honestly rather than inventing a classification for it.
+    return best ?? "unclassified_anomaly";
   }
 
   private buildTickFrame(tel: OpsTelemetry): TickFrame {
@@ -251,17 +388,23 @@ export class OpsClient {
 
     const ml = this.latestMl;
     const s = ml?.subsystem_scores ?? {};
+    // null, not 100. Before the first ml_result arrives there is no health
+    // assessment at all, and defaulting to a perfect score announced a healthy
+    // engine on the strength of zero evidence.
+    const assessing = this.isAssessing(String(tel.phase ?? ""));
+    const num = (v: unknown): number | null =>
+      assessing ? null : typeof v === "number" && Number.isFinite(v) ? v : null;
     const health: HealthBlock = {
-      ehi: ml?.health_score ?? 100,
+      ehi: num(ml?.health_score),
       subsystems: {
-        lubrication: s.lubrication ?? 100,
-        cooling: s.cooling ?? 100,
-        combustion: s.combustion ?? 100,
-        fuel: s.fuel ?? 100,
-        mechanical: s.mechanical ?? 100,
-        induction: s.induction ?? 100,
-        electrical: s.electrical ?? 100,
-        injection: s.injection ?? 100,
+        lubrication: num(s.lubrication),
+        cooling: num(s.cooling),
+        combustion: num(s.combustion),
+        fuel: num(s.fuel),
+        mechanical: num(s.mechanical),
+        induction: num(s.induction),
+        electrical: num(s.electrical),
+        injection: num(s.injection),
       },
     };
 
@@ -271,12 +414,22 @@ export class OpsClient {
     // probability mass for the label we're actually displaying, not
     // ml.confidence (which is the raw top class's confidence and may refer
     // to a different, not-yet-committed label).
-    const label = this.displayedLabel;
+    // While assessing we assert nothing. Publishing "healthy" here would be a
+    // claim the evidence does not support: during the takeoff grace window the
+    // classifier had P(healthy) = 0.00014 while the verdict was still being
+    // withheld, which would have rendered as "healthy, confidence 0%" — the
+    // very contradiction the verdict logic exists to prevent.
+    const label = assessing ? ASSESSING_LABEL : this.currentLabel(ml);
+    // Confidence is ALWAYS the probability mass of the label being displayed,
+    // never a stand-in constant.
+    const labelP = ml?.probabilities?.[label];
+    const confidence = assessing ? 0 : typeof labelP === "number" ? labelP : label === "healthy" ? 1 : 0;
+
     let sensorFault: DiagnosisBlock["sensorFault"] = { channel: null, mode: null, confidence: 0 };
     for (const part of label.split("+")) {
       const spec = SENSOR_FAULT_BY_ID.get(part);
       if (spec) {
-        sensorFault = { channel: spec.channel, mode: spec.mode, confidence: ml?.probabilities[label] ?? 0.8 };
+        sensorFault = { channel: spec.channel, mode: spec.mode, confidence };
         break;
       }
     }
@@ -284,49 +437,39 @@ export class OpsClient {
 
     const diagnosis: DiagnosisBlock = {
       label,
-      confidence: ml?.probabilities[label] ?? (label === "healthy" ? 1 : 0.5),
-      probs: ml ? Object.fromEntries(Object.entries(ml.probabilities).sort((a, b) => b[1] - a[1]).slice(0, 8)) : { healthy: 1 },
+      confidence,
+      probs:
+        assessing || !ml
+          ? {}
+          : Object.fromEntries(Object.entries(ml.probabilities).sort((a, b) => b[1] - a[1]).slice(0, 8)),
       anomalyScore: ml ? Math.max(0, Math.min(1, ml.anomaly_score)) : 0,
       cylinder: cylMatch ? Number(cylMatch[1]) : null,
       sensorFault,
     };
 
+    // The ML returns a point estimate with no uncertainty attached, so the band
+    // is left null here rather than manufactured from it. The old x0.7 / x1.4
+    // multipliers were not derived from anything — they drew an interval around
+    // the number and presented it as though it had been measured. runManager
+    // fills the band in from the reliability engine's Monte Carlo crossing-time
+    // distribution, which is an actual distribution.
     const rul = ml?.remaining_useful_life ?? null;
     const prognosis: PrognosisBlock = {
       rulSec: rul,
-      rulLoSec: rul !== null ? Math.round(rul * 0.7) : null,
-      rulHiSec: rul !== null ? Math.round(rul * 1.4) : null,
-      basis: "ml_rul_extrapolation",
+      rulLoSec: null,
+      rulHiSec: null,
+      basis: rul !== null ? "ml_rul_extrapolation" : "no_projection",
     };
 
     // server_ops has its own player-mission scoring (grade/score/fail_reason)
-    // built for the flown game, not this advisory framework — we don't use
-    // it. pSuccess/recommendation reuse the exact same thresholds as the
-    // stub's computeMission(). safeEnduranceSec has no real fuel-remaining
-    // telemetry to base itself on (fuel FLOW is sampled, fuel QUANTITY isn't)
-    // — falls back to the RUL estimate where one exists, else a generic
-    // placeholder reserve. Flagged here, not hidden.
+    // built for the flown game, not this advisory framework — we don't use it.
     //
-    // Ground phases are excluded from the recommendation ladder on purpose:
-    // "land immediately" for an aircraft that hasn't taken off is nonsensical
-    // advice, and the health/anomaly models score STARTUP oddly anyway (see
-    // the long comment above health) — an in-flight-only gate keeps the
-    // advisory meaningful and avoids exactly that contradiction.
+    // Mission reliability used to be computed here as `ehi / 100` with a
+    // hardcoded 1800 s endurance reserve. That is now twin/reliability.ts's
+    // job, applied by runManager for BOTH backends from the trend history and
+    // the mission's own remaining power schedule — so this path no longer
+    // guesses at it. See PENDING_MISSION.
     const phase = String(tel.phase ?? "cruise").toLowerCase();
-    const airborne = phase !== "startup" && phase !== "taxi" && phase !== "shutdown";
-    const pSuccess = Math.max(0, Math.min(1, health.ehi / 100));
-    let recommendation: MissionBlock["recommendation"] = "continue";
-    if (airborne) {
-      if (pSuccess < 0.5) recommendation = "land_immediately";
-      else if (pSuccess < 0.8) recommendation = "return_to_base";
-      else if (pSuccess < 0.95) recommendation = "derate";
-    }
-    const mission: MissionBlock = {
-      pSuccess: Math.round(pSuccess * 100) / 100,
-      recommendation,
-      safeEnduranceSec: rul ?? 1800,
-      derateTo: recommendation === "derate" ? 85 : null,
-    };
 
     return {
       contractVersion: CONTRACT_VERSION,
@@ -345,8 +488,9 @@ export class OpsClient {
       health,
       diagnosis,
       prognosis,
-      mission,
+      mission: PENDING_MISSION, // replaced by ReliabilityEngine in runManager.finishTick()
       alerts: [], // filled in by AlertEngine in runManager, same as the stub path
+      injectedFaults: this.injectedFaults(),
     };
   }
 }

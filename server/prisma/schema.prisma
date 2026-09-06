@@ -67,7 +67,7 @@ model Frame {
   context   String // JSON-encoded FlightContext
   residualZ String // JSON-encoded Record<string, number>
   health    String // JSON-encoded HealthBlock
-  ehi       Float // duplicated out of `health` for fast charting
+  ehi       Float? // duplicated out of `health` for fast charting; null = not yet assessed
 
   faultLabel         String?
   confidence         Float?

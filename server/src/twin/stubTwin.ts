@@ -1,7 +1,8 @@
 import { mulberry32, gaussian } from "./rng";
 import { sensorContract, SensorSpec, FAULT_CLASS_BY_ID, SENSOR_FAULT_BY_ID, FaultCascadeStep } from "./contract";
+import { PENDING_MISSION } from "./reliability";
 import {
-  TickFrame, FlightContext, DiagnosisBlock, HealthBlock, PrognosisBlock, MissionBlock,
+  TickFrame, FlightContext, DiagnosisBlock, HealthBlock, PrognosisBlock,
   MissionProfile, FaultRequest, SUBSYSTEMS, CONTRACT_VERSION,
 } from "../types";
 
@@ -33,6 +34,26 @@ const CHT_GAIN_FUEL = 0.3;
 const CHT_GAIN_EGT_DEVIATION = 0.15;
 const CHT_FUEL_FLOW_REF_LPH = 12;
 
+// Residual z-score at which this stub calls the engine fully anomalous. 5 sigma
+// is the conventional "this is not noise" threshold; the anomaly score is the
+// mean |z| across all channels expressed as a fraction of it, so the number now
+// states what it means instead of being a bare divisor.
+const ANOMALY_FULL_SCALE_Z = 5;
+
+// Fault ramps reach full expression this long after onset. Matches the longest
+// ramp_duration_s in contract/faults.json, so a fault is called fully developed
+// no sooner than its slowest channel actually gets there.
+const FAULT_RAMP_FULL_SEC = 120;
+
+// EHI at which this stub's trend-based RUL calls the engine unfit to continue.
+// Distinct from a redline: it is the point where the health index itself, not
+// any single channel, says the engine should already be on the ground.
+const EHI_FAILURE_THRESHOLD = 40;
+
+// Minimum EHI decline (points per second) that counts as a real downward trend
+// rather than regression noise on a flat history.
+const EHI_TREND_FLOOR = 0.001;
+
 function deriveCht(coolantTempC: number, fuelFlowLph: number, egtK: number, egtMean: number): number {
   return (
     coolantTempC +
@@ -47,12 +68,14 @@ interface ActiveFault {
   severity: number;
   onsetAt: number;
   cylinder: number | null;
+  seq: number; // injection order — compound labels list faults as injected
 }
 interface SensorFaultState {
   faultId: string;
   channel: string;
   mode: "frozen" | "drift";
   onsetAt: number;
+  seq: number;
   frozenValue?: number;
 }
 
@@ -91,8 +114,9 @@ export class TwinRun {
   private legElapsed = 0;
   private smoothed: Record<string, number> = {};
   private activeFaults: ActiveFault[] = [];
+  private faultSeq = 0;
   private ehiHistory: { t: number; ehi: number }[] = [];
-  private sensorFault: SensorFaultState | null = null;
+  private sensorFaults: SensorFaultState[] = [];
 
   constructor(runId: string, engineId: string, seed: number, scenario: string, missionProfile?: MissionProfile) {
     this.runId = runId;
@@ -107,37 +131,66 @@ export class TwinRun {
     }
   }
 
+  /**
+   * Faults ACCUMULATE — injecting a second one does not replace the first, on
+   * either the engine or the sensor side. This matches Retribution's own
+   * FaultManager.inject_fault(), which appends to active_faults, and it is what
+   * makes compound failures (the whole point of the v3 dataset) reachable from
+   * the console.
+   *
+   * Re-injecting a fault id that is ALREADY active restarts it at the new
+   * severity rather than stacking a duplicate — that is what an operator
+   * dragging the severity slider and pressing Inject again means.
+   */
   injectFault(req: FaultRequest) {
+    const onsetAt = this.t + (req.onsetDelay ?? 0);
+
     // Sensor faults (contract/faults.json's sensorFaults) each target exactly
     // one fixed channel/mode — Retribution doesn't randomize this, so neither
-    // do we. Unknown req.type is silently a no-op engine fault below (falls
-    // through FAULT_CLASS_BY_ID.get() returning undefined) rather than a
-    // random guess at what the caller meant.
+    // do we.
     const sensorFault = SENSOR_FAULT_BY_ID.get(req.type);
     if (sensorFault) {
-      this.sensorFault = {
+      this.sensorFaults = this.sensorFaults.filter((f) => f.faultId !== sensorFault.id);
+      this.sensorFaults.push({
         faultId: sensorFault.id,
         channel: sensorFault.channel,
         mode: sensorFault.mode,
-        onsetAt: this.t + (req.onsetDelay ?? 0),
-      };
+        onsetAt,
+        seq: this.faultSeq++,
+      });
       return;
     }
+
     // ignition_fault_cyl3 / injector_fault_cyl3 are hardcoded to cylinder 3 in
     // Retribution's simulator today (SIMULATOR_CONTEXT.md §14) — the fault
     // class's own `cylinder` field is authoritative, not a client-supplied one.
     const faultClass = FAULT_CLASS_BY_ID.get(req.type);
+    // An id matching neither table used to be accepted and then do nothing,
+    // which is indistinguishable from "the inject button is broken".
+    if (!faultClass) throw new Error(`Unknown fault type "${req.type}"`);
+
+    this.activeFaults = this.activeFaults.filter((f) => f.type !== req.type);
     this.activeFaults.push({
       type: req.type,
       severity: clamp(req.severity, 0, 1),
-      onsetAt: this.t + (req.onsetDelay ?? 0),
-      cylinder: faultClass?.cylinder ?? null,
+      onsetAt,
+      cylinder: faultClass.cylinder ?? null,
+      seq: this.faultSeq++,
     });
   }
 
   clearFaults() {
     this.activeFaults = [];
-    this.sensorFault = null;
+    this.sensorFaults = [];
+  }
+
+  /** Ground truth for the console's "currently injected" readout, in the order
+   * they were injected. Empty in real operation — nothing injects faults into a
+   * real engine. */
+  injectedFaults(): string[] {
+    const engine = this.activeFaults.map((f) => ({ seq: f.seq, id: f.type }));
+    const sensor = this.sensorFaults.map((f) => ({ seq: f.seq, id: f.faultId }));
+    return [...engine, ...sensor].sort((a, b) => a.seq - b.seq).map((f) => f.id);
   }
 
   get elapsedSec() {
@@ -192,7 +245,11 @@ export class TwinRun {
     }
 
     const health = this.computeHealth(residualZ);
-    this.ehiHistory.push({ t: this.t, ehi: health.ehi });
+    // The stub computes health every tick from its own residuals, so it always
+    // has a number here — unlike the ops backend, which genuinely has none
+    // until the ML reports. Guarded rather than asserted so a future change to
+    // computeHealth cannot silently poison the RUL trend with a zero.
+    if (health.ehi !== null) this.ehiHistory.push({ t: this.t, ehi: health.ehi });
     if (this.ehiHistory.length > 240) this.ehiHistory.shift();
 
     return {
@@ -208,8 +265,14 @@ export class TwinRun {
       health,
       diagnosis: this.computeDiagnosis(residualZ),
       prognosis: this.computePrognosis(),
-      mission: this.computeMission(health.ehi),
+      // Mission reliability is computed by twin/reliability.ts and applied in
+      // runManager.finishTick(), same as the ops backend — this class used to
+      // compute `ehi / 100` here, which measured present degradation rather
+      // than whether the sortie will finish. Kept out of this class
+      // deliberately, exactly like alerts below.
+      mission: PENDING_MISSION,
       alerts: [], // filled in by AlertEngine in runManager, kept out of this class deliberately
+      injectedFaults: this.injectedFaults(),
     };
   }
 
@@ -335,17 +398,30 @@ export class TwinRun {
     return delta;
   }
 
+  /**
+   * Applies EVERY live sensor fault touching this channel, in injection order.
+   * The two sensor faults in contract/faults.json target different channels, so
+   * today this only ever composes one — but the previous single-slot overlay
+   * silently EVICTED the earlier fault when a second was injected, which is
+   * exactly what made a second injection look like it had been ignored.
+   */
   private applySensorFaultOverlay(channel: string, value: number): number {
-    if (!this.sensorFault || this.sensorFault.channel !== channel || this.t < this.sensorFault.onsetAt) return value;
-    if (this.sensorFault.mode === "frozen") {
-      if (this.sensorFault.frozenValue === undefined) this.sensorFault.frozenValue = value;
-      return this.sensorFault.frozenValue;
+    let out = value;
+    for (const sf of this.sensorFaults) {
+      if (sf.channel !== channel || this.t < sf.onsetAt) continue;
+      if (sf.mode === "frozen") {
+        // A freeze overrides anything applied before it — the reading is stuck.
+        if (sf.frozenValue === undefined) sf.frozenValue = out;
+        out = sf.frozenValue;
+        continue;
+      }
+      // drift — exact linear rate from this sensor fault's contract/faults.json entry
+      const spec = SENSOR_FAULT_BY_ID.get(sf.faultId);
+      if (!spec || spec.delta === undefined || spec.rampSec === undefined) continue;
+      const elapsed = this.t - sf.onsetAt;
+      out += Math.min(1, elapsed / spec.rampSec) * spec.delta;
     }
-    // drift — exact linear rate from this sensor fault's contract/faults.json entry
-    const spec = SENSOR_FAULT_BY_ID.get(this.sensorFault.faultId);
-    if (!spec || spec.delta === undefined || spec.rampSec === undefined) return value;
-    const elapsed = this.t - this.sensorFault.onsetAt;
-    return value + Math.min(1, elapsed / spec.rampSec) * spec.delta;
+    return out;
   }
 
   private computeHealth(residualZ: Record<string, number>): HealthBlock {
@@ -369,51 +445,97 @@ export class TwinRun {
     return { ehi, subsystems };
   }
 
+  /**
+   * Builds the COMPOUND label, joined with "+" in injection order — the same
+   * format Retribution's FaultManager.get_state() produces and the same format
+   * the real 91-class classifier is trained on.
+   *
+   * This previously reported only the single strongest fault, so injecting a
+   * second one changed the physics but never changed the displayed label. The
+   * fault was being applied; the console just never said so.
+   */
   private computeDiagnosis(residualZ: Record<string, number>): DiagnosisBlock {
-    let label = "healthy";
-    let confidence = 0.9;
-    let cylinder: number | null = null;
-    const probs: Record<string, number> = { healthy: 1 };
-
-    const active = this.activeFaults
+    // Engine and sensor faults share one ordering, exactly as they share one
+    // active_faults list in the Python.
+    const active = [
+      ...this.activeFaults.map((f) => ({ seq: f.seq, id: f.type, severity: f.severity, onsetAt: f.onsetAt, cylinder: f.cylinder })),
+      ...this.sensorFaults.map((f) => ({ seq: f.seq, id: f.faultId, severity: 1, onsetAt: f.onsetAt, cylinder: null as number | null })),
+    ]
       .filter((f) => this.t >= f.onsetAt)
-      .map((f) => ({ f, ramp: Math.min(1, (this.t - f.onsetAt) / 120) }))
-      .sort((a, b) => b.f.severity * b.ramp - a.f.severity * a.ramp);
-
-    if (active.length > 0) {
-      const top = active[0];
-      label = top.f.type;
-      confidence = round2(clamp(0.5 + 0.45 * top.f.severity * top.ramp, 0.3, 0.97));
-      cylinder = top.f.cylinder;
-      probs[label] = confidence;
-      probs.healthy = round2(1 - confidence);
-      for (let i = 1; i < active.length; i++) {
-        const share = round2((1 - confidence) * 0.3);
-        probs[active[i].f.type] = (probs[active[i].f.type] ?? 0) + share;
-      }
-    }
+      .sort((a, b) => a.seq - b.seq)
+      .map((f) => ({ ...f, strength: f.severity * Math.min(1, (this.t - f.onsetAt) / FAULT_RAMP_FULL_SEC) }));
 
     const zValues = Object.values(residualZ);
     const meanAbsZ = zValues.reduce((s, z) => s + Math.abs(z), 0) / zValues.length;
-    const anomalyScore = round2(clamp(meanAbsZ / 5, 0, 1));
+    const anomalyScore = round2(clamp(meanAbsZ / ANOMALY_FULL_SCALE_Z, 0, 1));
 
-    const faultLive = this.sensorFault && this.t >= this.sensorFault.onsetAt;
+    // The console's sensorFault block stays single-valued (contract 1.1.0); the
+    // compound label above is what surfaces a second one. Reports the earliest
+    // still-live sensor fault.
+    const liveSensor = this.sensorFaults.filter((f) => this.t >= f.onsetAt).sort((a, b) => a.seq - b.seq)[0];
+    const sensorFault = {
+      channel: liveSensor?.channel ?? null,
+      mode: liveSensor?.mode ?? null,
+      // Grows as the faulted channel's own residual grows, rather than sitting
+      // at a fixed 0.8 from the instant of injection.
+      confidence: liveSensor
+        ? round2(clamp(Math.abs(residualZ[liveSensor.channel] ?? 0) / ANOMALY_FULL_SCALE_Z, 0.3, 0.99))
+        : 0,
+    };
+
+    if (active.length === 0) {
+      // Confidence in "healthy" falls as the residuals grow — a flat 0.9 claimed
+      // the same certainty whether every channel sat on its nominal or the
+      // engine was 4 sigma out with no fault yet classified.
+      const confidence = round2(clamp(1 - anomalyScore, 0.3, 1));
+      return { label: "healthy", confidence, probs: { healthy: confidence }, anomalyScore, cylinder: null, sensorFault };
+    }
+
+    const label = active.map((f) => f.id).join("+");
+    // A compound diagnosis is only as well-established as its LEAST developed
+    // member — a fault injected two seconds ago has barely moved a sensor yet,
+    // and claiming high confidence in the pair would be claiming to have seen
+    // evidence that does not exist.
+    const weakest = Math.min(...active.map((f) => f.strength));
+    const confidence = round2(clamp(0.5 + 0.45 * weakest, 0.3, 0.97));
+
+    // Mass is split between the exact compound class, each constituent seen
+    // alone, and healthy — mirroring how the real multiclass classifier spreads
+    // probability over related labels rather than spiking one.
+    const weights: Record<string, number> = { [label]: confidence, healthy: 1 - Math.max(...active.map((f) => f.strength)) };
+    if (active.length > 1) {
+      for (const f of active) weights[f.id] = (weights[f.id] ?? 0) + f.strength * 0.5;
+    }
+    const total = Object.values(weights).reduce((a, b) => a + b, 0) || 1;
+    const probs: Record<string, number> = {};
+    for (const [k, v] of Object.entries(weights)) probs[k] = round2(v / total);
+
     return {
       label,
       confidence,
       probs,
       anomalyScore,
-      cylinder,
-      sensorFault: {
-        channel: faultLive ? this.sensorFault!.channel : null,
-        mode: faultLive ? this.sensorFault!.mode : null,
-        confidence: faultLive ? 0.8 : 0,
-      },
+      // First fault carrying a cylinder — only the cyl3 ignition/injector
+      // faults do, and only one of them can be active on a given cylinder.
+      cylinder: active.find((f) => f.cylinder !== null)?.cylinder ?? null,
+      sensorFault,
     };
   }
 
+  /**
+   * Trend-based RUL: least-squares slope of the EHI history extrapolated to
+   * EHI_FAILURE_THRESHOLD.
+   *
+   * The uncertainty band comes from the standard error of that slope, not from
+   * fixed x0.7 / x1.4 multipliers. A noisy, barely-resolved decline now yields a
+   * genuinely wide interval and a confident steady one yields a tight interval,
+   * where the old multipliers drew the same shaped interval either way and so
+   * carried no information at all.
+   */
   private computePrognosis(): PrognosisBlock {
-    if (this.ehiHistory.length < 30) return { rulSec: null, rulLoSec: null, rulHiSec: null, basis: "ehi_trend" };
+    const none = (basis: string): PrognosisBlock => ({ rulSec: null, rulLoSec: null, rulHiSec: null, basis });
+    if (this.ehiHistory.length < 30) return none("insufficient_history");
+
     const recent = this.ehiHistory.slice(-180);
     const n = recent.length;
     const meanT = recent.reduce((s, p) => s + p.t, 0) / n;
@@ -424,25 +546,33 @@ export class TwinRun {
       num += (p.t - meanT) * (p.ehi - meanE);
       den += (p.t - meanT) ** 2;
     }
-    const slope = den === 0 ? 0 : num / den;
-    if (slope >= -0.001) return { rulSec: null, rulLoSec: null, rulHiSec: null, basis: "ehi_trend" };
+    if (den === 0) return none("ehi_trend");
+    const slope = num / den;
+    if (slope >= -EHI_TREND_FLOOR) return none("ehi_trend_stable");
+
+    // Standard error of the slope, from the fit's own residuals.
+    const intercept = meanE - slope * meanT;
+    let sse = 0;
+    for (const p of recent) sse += (p.ehi - (intercept + slope * p.t)) ** 2;
+    const slopeSe = n > 2 ? Math.sqrt(sse / (n - 2) / den) : 0;
 
     const current = recent[recent.length - 1].ehi;
-    const rulSec = Math.round((current - 40) / -slope);
-    if (rulSec <= 0) return { rulSec: null, rulLoSec: null, rulHiSec: null, basis: "ehi_trend" };
-    return { rulSec, rulLoSec: Math.round(rulSec * 0.7), rulHiSec: Math.round(rulSec * 1.4), basis: "ehi_trend" };
+    const gap = current - EHI_FAILURE_THRESHOLD;
+    if (gap <= 0) return { rulSec: 0, rulLoSec: 0, rulHiSec: 0, basis: "ehi_trend_below_threshold" };
+
+    const rulAt = (s: number) => (s <= 0 ? Math.round(gap / -s) : null);
+    const rulSec = rulAt(slope);
+    if (rulSec === null || rulSec <= 0) return none("ehi_trend");
+    // Steeper slope (slope - se) fails sooner; shallower (slope + se) later, and
+    // may not reach the threshold at all, in which case the upper bound is open.
+    return {
+      rulSec,
+      rulLoSec: rulAt(slope - slopeSe),
+      rulHiSec: rulAt(slope + slopeSe),
+      basis: "ehi_trend",
+    };
   }
 
-  private computeMission(ehi: number): MissionBlock {
-    const pSuccess = round2(clamp(ehi / 100, 0, 1));
-    let recommendation: MissionBlock["recommendation"] = "continue";
-    if (pSuccess < 0.5) recommendation = "land_immediately";
-    else if (pSuccess < 0.8) recommendation = "return_to_base";
-    else if (pSuccess < 0.95) recommendation = "derate";
-    const remainingLegs = this.missionProfile.legs.slice(this.legIndex + 1);
-    const safeEnduranceSec = remainingLegs.reduce((s, l) => s + l.durationSec, 0);
-    return { pSuccess, recommendation, safeEnduranceSec, derateTo: recommendation === "derate" ? 85 : null };
-  }
 }
 
 /**

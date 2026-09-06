@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { Server as SocketIOServer } from "socket.io";
 import { prisma } from "../db/client";
-import { startRun, injectFault, stopRun, getFrameBuffer, isActive, setStatus } from "../twin/runManager";
+import { startRun, injectFault, clearFaults, stopRun, getFrameBuffer, getReliability, isActive, getStatus, setStatus } from "../twin/runManager";
+import { FAULT_CLASS_BY_ID, SENSOR_FAULT_BY_ID } from "../twin/contract";
 import { RunClock } from "../twin/clock";
 import { StartRunRequest, FaultRequest } from "../types";
 import { generateAdvisory, answerChat } from "../ai/client";
@@ -42,6 +43,10 @@ export function createRunsRouter(io: SocketIOServer) {
     }
   });
 
+  /** Faults ACCUMULATE — POST twice with different types and both stay active,
+   * which is how a compound failure is reproduced from the console. An id that
+   * matches neither a fault class nor a sensor fault is now a 400 rather than a
+   * silently-accepted no-op. */
   router.post("/:id/fault", (req, res) => {
     try {
       const body = req.body as FaultRequest;
@@ -49,8 +54,28 @@ export function createRunsRouter(io: SocketIOServer) {
         res.status(404).json({ error: "run not found or not active" });
         return;
       }
+      if (!body?.type || (!FAULT_CLASS_BY_ID.has(body.type) && !SENSOR_FAULT_BY_ID.has(body.type))) {
+        res.status(400).json({ error: `unknown fault type "${body?.type}"` });
+        return;
+      }
       injectFault(req.params.id, body);
       res.status(202).json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+    }
+  });
+
+  /** Clear every active fault without ending the sortie — the counterpart to
+   * accumulation. Without it the only way back to a healthy engine was to stop
+   * and restart the run. */
+  router.delete("/:id/faults", (req, res) => {
+    try {
+      if (!isActive(req.params.id)) {
+        res.status(404).json({ error: "run not found or not active" });
+        return;
+      }
+      clearFaults(req.params.id);
+      res.json({ ok: true });
     } catch (err) {
       res.status(400).json({ error: (err as Error).message });
     }
@@ -62,6 +87,13 @@ export function createRunsRouter(io: SocketIOServer) {
     await stopRun(req.params.id);
     io.to(`run:${req.params.id}`).emit("run:status", { status: "stopped" });
     res.json({ status: "stopped" });
+  });
+
+  /** Is this run actually live in THIS process? The database's own status
+   * cannot answer that — see reapOrphanedRuns. The console polls this while it
+   * waits for a first frame so it can tell a slow start from a dead run. */
+  router.get("/:id/status", (req, res) => {
+    res.json({ active: isActive(req.params.id), status: getStatus(req.params.id) ?? "stopped" });
   });
 
   router.get("/:id/telemetry", async (req, res) => {
@@ -121,21 +153,25 @@ export function createRunsRouter(io: SocketIOServer) {
     res.json(messages);
   });
 
+  /**
+   * "What if we held X% power for the rest of the sortie?" — re-runs the same
+   * Monte Carlo limit projection as the live advisory, with every remaining
+   * mission leg capped at X%. This replaced a proportional placeholder that
+   * simply added a fixed bonus per point of derate; the answer now comes from
+   * this engine's own measured per-channel throttle sensitivity, so a derate
+   * helps a lot on a heat-limited channel and barely at all on, say, a
+   * failing alternator.
+   */
   router.post("/:id/whatif", async (req, res) => {
     const buffer = getFrameBuffer(req.params.id);
     const latest = buffer[buffer.length - 1];
-    if (!latest) {
+    const reliability = getReliability(req.params.id);
+    if (!latest || !reliability) {
       res.status(404).json({ error: "no telemetry for this run yet" });
       return;
     }
-    // Simple placeholder proportional model — R2's real Monte Carlo version
-    // (ml_procedure.md §7.9) replaces this function body only; the route and
-    // response shape stay the same.
-    const powerPct = Number(req.body?.powerPct ?? 100);
-    const derateFactor = powerPct / 100;
-    const pSuccess = Math.min(1, latest.mission.pSuccess + (1 - derateFactor) * 0.4);
-    const safeEnduranceSec = Math.round(latest.mission.safeEnduranceSec * (1 + (1 - derateFactor) * 0.5));
-    res.json({ pSuccess: Math.round(pSuccess * 100) / 100, safeEnduranceSec });
+    const powerPct = Math.max(20, Math.min(100, Number(req.body?.powerPct ?? 100)));
+    res.json(reliability.whatIf(latest, powerPct));
   });
 
   return router;

@@ -1,21 +1,17 @@
 {
-  "overall_accuracy": {
-    "baseline": 0.5740641635918091,
-    "retrained": 0.7957074050080275,
-    "change_pct": 38.60948923016536
-  },
-  "balanced_accuracy": {
-    "baseline": 0.12108814462022374,
-    "retrained": 0.5163462947321493,
-    "change_pct": 326.42184034745776
-  },
-  "macro_f1": {
-    "baseline": 0.07486093045501273,
-    "retrained": 0.4711071981837371,
-    "change_pct": 529.3098353444143
-  },
-  "weighted_f1": {
-    "baseline": 0.5090586890217301,
-    "retrained": 0.7876566522534985
-  }
+  "note": "Metrics for the ACTIVE classifier, measured on held-out flights by retrain_fault_classifier.py. Replaces the previous evaluation.json, which reported 79.57% accuracy for an artifact that had diverged during training (leaf values reaching 1.1e5) and returned P(healthy)=0.000 on its own healthy training flights.",
+  "evaluated_at": "2026-09-06T11:07:01+00:00",
+  "n_classes": 70,
+  "n_test_windows": 27496,
+  "n_test_flights": 80,
+  "accuracy": 0.8419,
+  "balanced_accuracy": 0.6571,
+  "macro_f1": 0.3473,
+  "weighted_f1": 0.8195,
+  "healthy_recall": 0.9984,
+  "healthy_mean_p_healthy": 0.9857,
+  "faulted_flagged_not_healthy": 0.9939,
+  "converged": true,
+  "max_leaf_value_last_iter": 0.04560901922167034,
+  "superseded_artifact": "see ML/models/fault_classifier_broken_* for the previous one"
 }

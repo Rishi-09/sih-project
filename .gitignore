@@ -48,3 +48,5 @@ yarn-error.log*
 915_complete.max
 image.png
 Rotax_915.FBX
+# Cached ML feature matrices — regenerate with retribution/retrain_fault_classifier.py
+retribution/ML/data/processed/features_v3_*.npz

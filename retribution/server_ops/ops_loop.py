@@ -49,7 +49,10 @@ class OpsSimulationManager:
         """Pre-load ML pipeline in memory."""
         try:
             logger.info("Loading EngineHealthPipeline for Engine Ops...")
-            self.ml_pipeline = EngineHealthPipeline()
+            # "ops": normalise residuals against the OpsEngineSim calibration,
+            # not the runs_v3 one the twin was fitted on. See
+            # calibrate_ops_residuals.py for why that distinction matters here.
+            self.ml_pipeline = EngineHealthPipeline(residual_domain="ops")
             logger.info("EngineHealthPipeline loaded successfully.")
         except Exception as e:
             logger.error(f"Failed to load ML pipeline: {e}. Running in telemetry-only mode.")

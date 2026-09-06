@@ -126,46 +126,43 @@ class OpsEngineSim:
         current_rpm = float(faulted_sensors.get("rpm", 5000.0))
         noise = self.noise_engine.generate(rpm=current_rpm, t_s=self.t_s)
         
-        # Biome Specific Environmental Sensor Shifts
-        biome_id = context.get("biome_id", "normal")
-        storm_vib = context.get("vib_extra", 0.0)
-        storm_volt_noise = context.get("volt_noise", 0.0)
-        
+        # Biome environmental effects.
+        #
+        # The thermal, induction and oil-pressure shifts that used to live here
+        # were DOUBLE COUNTING physics the model above already produces:
+        #
+        #   - desert / arctic set base_oat_c to +48 / -30 (server_ops/config.py),
+        #     so context["oat_c"] already carries the ambient, and
+        #     NominalSensorModel already applies it — coolant via
+        #     (oat_c - 15) * 0.40, oil temp via clip((oat_c - 15) * 0.20, ...).
+        #     Adding a further flat +18 degC to coolant on top applied the same
+        #     desert twice.
+        #   - the >4800 m MAP/fuel/rpm roll-off duplicated the TCU critical-
+        #     altitude model already in NominalSensorModel.
+        #
+        # Beyond being wrong physics, the duplicated half was INVISIBLE to the
+        # nominal twin: the twin sees only (throttle, alt, oat, ias, phase), so
+        # it predicts the ambient response correctly and the bolt-on offset
+        # lands entirely in the residual. Against a healthy coolant sigma of
+        # 0.39 degC, +18 degC of it reads as roughly 47 sigma — a healthy desert
+        # sortie diagnosed as a hard cooling failure, permanently.
+        #
+        # Turbulence and lightning EMI are kept, because they are genuinely
+        # external disturbances that no amount of context regression can predict
+        # from throttle and altitude. They stay confined to the storm biome and
+        # are driven by the biome's own declared vib_extra / volt_noise rather
+        # than by numbers hardcoded here.
+        storm_vib = float(context.get("vib_extra", 0.0))
+        storm_volt_noise = float(context.get("volt_noise", 0.0))
+
         final_sensors: Dict[str, float] = {}
         for ch in SENSOR_CHANNELS:
             raw_val = faulted_sensors.get(ch, 0.0) + noise.get(ch, 0.0)
-            
-            # Biome Direct Thermal & Hydraulic Influences
-            if biome_id == "desert":
-                if "coolant" in ch:
-                    raw_val += 18.0
-                elif "oil_temp" in ch:
-                    raw_val += 16.0
-                elif "cht" in ch:
-                    raw_val += 14.0
-            elif biome_id == "arctic":
-                if "coolant" in ch:
-                    raw_val -= 20.0
-                elif "oil_temp" in ch:
-                    raw_val -= 18.0
-                elif "oil_press" in ch:
-                    raw_val += 1.2 # Cold thick oil overpressure
-            elif biome_id == "high_alt" or context.get("alt_m", 0.0) > 4800.0:
-                alt_excess = max(0.0, context.get("alt_m", 0.0) - 4800.0)
-                alt_decay = alt_excess / 1700.0
-                if "map_kpa" in ch:
-                    raw_val = max(40.0, raw_val - (alt_decay * 45.0))
-                elif "fuel_flow" in ch:
-                    raw_val = max(5.0, raw_val - (alt_decay * 10.0))
-                elif "rpm" in ch:
-                    raw_val = max(2500.0, raw_val - (alt_decay * 600.0))
 
-            # Apply storm turbulence / EMI
-            if biome_id == "storm":
-                if ch == "vib_rms_g":
-                    raw_val += float(self.context_gen.rng.uniform(0.25, 0.45))
-                elif ch == "bus_voltage_v":
-                    raw_val += float(self.context_gen.rng.normal(0.0, 0.55))
+            if ch == "vib_rms_g" and storm_vib > 0.0:
+                raw_val += abs(float(self.context_gen.rng.normal(0.0, storm_vib)))
+            elif ch == "bus_voltage_v" and storm_volt_noise > 0.0:
+                raw_val += float(self.context_gen.rng.normal(0.0, storm_volt_noise))
             
             # Physical non-negative floor bounds
             if "press" in ch or "flow" in ch or ch in ("rpm", "vib_rms_g", "map_kpa", "alt_current_a"):

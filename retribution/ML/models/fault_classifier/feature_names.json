@@ -1,5 +1,4 @@
 {
-  "n_features": 76,
   "feature_names": [
     "window_mean_z_rpm",
     "window_std_z_rpm",

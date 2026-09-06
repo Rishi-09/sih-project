@@ -34,6 +34,10 @@ class OpsContextGenerator:
         self.current_biome_id = "normal"
         self.current_biome_name = BIOMES["normal"]["name"]
 
+        # Atmospheric disturbance state — see _step_flight_dynamics.
+        self._gust_alt = 0.0
+        self._gust_ias = 0.0
+
     def set_player_input(self, control_data: Dict[str, Any]):
         """
         Receive sanitized control packet from InputManager / WebSocket.
@@ -103,6 +107,39 @@ class OpsContextGenerator:
             climb_rate *= (self.throttle_pct / 20.0)
             
         self.alt_m = float(np.clip(self.alt_m + climb_rate * dt, 0.0, SERVICE_CEILING_M))
+
+        # 2b. Atmospheric disturbance.
+        #
+        # Without this the autopilot holds altitude and airspeed PERFECTLY, and
+        # a cruise leg becomes numerically frozen: every context input is
+        # constant, so the nominal twin returns a constant prediction, the
+        # sensor sits on one ADC step, and the residual is literally invariant.
+        # The window features then come out degenerate — window_std_z and
+        # window_slope_z of exactly 0.0 on the CHT channels — which is a
+        # combination that appears nowhere in training, where CRUISE carried
+        # alt +/- 5 m and ias +/- 1 kt of deliberate perturbation
+        # (simulator/context.py). Fed those, the 91-class classifier returned
+        # 100% confidence in injector_fault_cyl3+sensor_freeze_coolant on a
+        # completely healthy engine.
+        #
+        # Real air is never still, and the fix is to stop pretending it is: a
+        # slow random walk, mean-reverting so it wanders without drifting away,
+        # at roughly the amplitude the training generator used. Airborne only —
+        # an aircraft on the runway is not being bounced around by gusts.
+        if self.alt_m > 2.0:
+            tau = 12.0
+            decay = float(np.exp(-dt / tau))
+            # AR(1) innovation scaled by sqrt(1 - decay^2) so the process has
+            # the intended STATIONARY amplitude regardless of dt — the same
+            # parameterisation simulator/thermal.py uses for its pink noise.
+            # Scaling by (1 - decay) instead makes the amplitude collapse as dt
+            # shrinks, which at the ops sim's 0.05 s step left gusts of 0.1 m.
+            innov = float(np.sqrt(max(0.0, 1.0 - decay * decay)))
+            self._gust_alt = self._gust_alt * decay + float(self.rng.normal(0.0, 2.2)) * innov
+            self._gust_ias = self._gust_ias * decay + float(self.rng.normal(0.0, 0.9)) * innov
+        else:
+            self._gust_alt = 0.0
+            self._gust_ias = 0.0
         
         # 3. Flight Phase derivation
         if self.alt_m < 2.0:
@@ -131,9 +168,11 @@ class OpsContextGenerator:
         context_record = {
             "t_s": float(self.t_s),
             "throttle_pct": float(np.clip(self.throttle_pct, 0.0, 100.0)),
-            "alt_m": float(max(0.0, self.alt_m)),
+            # Gusts ride on the reported altitude/airspeed, exactly as they
+            # would on a real air-data probe.
+            "alt_m": float(max(0.0, self.alt_m + self._gust_alt)),
             "oat_c": float(oat_c),
-            "ias_kt": float(max(0.0, self.ias_kt)),
+            "ias_kt": float(max(0.0, self.ias_kt + self._gust_ias)),
             "phase": str(self.phase),
             # Metadata for 2D UI
             "pitch_norm": float(self.pitch_norm),

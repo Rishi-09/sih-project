@@ -1,7 +1,8 @@
 import { prisma } from "../db/client";
 import { TwinRun } from "./stubTwin";
-import { OpsClient } from "./opsClient";
+import { OpsClient, opsMissionProfile } from "./opsClient";
 import { AlertEngine } from "./alerts";
+import { ReliabilityEngine } from "./reliability";
 import { StartRunRequest, FaultRequest, TickFrame } from "../types";
 
 type RunStatus = "live" | "degraded" | "stopped";
@@ -11,6 +12,7 @@ interface RunEntry {
   engine: EngineBackend;
   mode: "stub" | "ops";
   alertEngine: AlertEngine;
+  reliability: ReliabilityEngine;
   status: RunStatus;
   frameBuffer: TickFrame[]; // last ~300 frames — chat/report context
   pendingFrames: TickFrame[]; // batched, flushed to SQLite every 5 ticks
@@ -46,6 +48,10 @@ export async function startRun(req: StartRunRequest): Promise<{ runId: string }>
 
   let engine: EngineBackend;
   let mode: "stub" | "ops";
+  // The mission the reliability engine projects against must be the mission
+  // actually being flown. The ops backend flies its own autopilot schedule, not
+  // the caller's profile and not the stub's default.
+  let missionProfile = req.missionProfile;
   if (process.env.TWIN_BACKEND === "stub") {
     engine = new TwinRun(dbRun.id, req.engineId, seed, req.scenario ?? "custom", req.missionProfile);
     mode = "stub";
@@ -55,6 +61,7 @@ export async function startRun(req: StartRunRequest): Promise<{ runId: string }>
       await ops.connect();
       engine = ops;
       mode = "ops";
+      missionProfile = opsMissionProfile();
     } catch (err) {
       console.error(`ops backend unreachable, falling back to stub twin for run ${dbRun.id}:`, (err as Error).message);
       engine = new TwinRun(dbRun.id, req.engineId, seed, req.scenario ?? "custom", req.missionProfile);
@@ -62,14 +69,55 @@ export async function startRun(req: StartRunRequest): Promise<{ runId: string }>
     }
   }
 
-  runs.set(dbRun.id, { engine, mode, alertEngine: new AlertEngine(), status: "live", frameBuffer: [], pendingFrames: [], lastFrameT: null });
+  runs.set(dbRun.id, {
+    engine,
+    mode,
+    alertEngine: new AlertEngine(),
+    // One reliability engine per run, fed every tick in finishTick(). It lives
+    // here rather than inside either backend on purpose: the stub and the real
+    // ops/ML backend then produce the SAME reliability assessment from the same
+    // code, instead of each computing its own `ehi/100` separately.
+    reliability: new ReliabilityEngine(missionProfile),
+    status: "live",
+    frameBuffer: [],
+    pendingFrames: [],
+    lastFrameT: null,
+  });
   return { runId: dbRun.id };
+}
+
+/**
+ * Marks every run still recorded as live as stopped.
+ *
+ * A run's live state lives in the in-process `runs` map; the database row only
+ * mirrors it. So any row still saying "live" at startup belongs to a process
+ * that no longer exists and can never produce another frame — during
+ * development that is every `tsx watch` reload.
+ *
+ * Left uncleaned they are worse than clutter: /api/engines keeps advertising
+ * the newest one as the engine's current run, the console auto-subscribes to
+ * it, and the operator sits on "Waiting for telemetry…" forever for a sortie
+ * that ended when the file watcher fired. Twelve had piled up before this
+ * existed.
+ */
+export async function reapOrphanedRuns(): Promise<number> {
+  const { count } = await prisma.run.updateMany({
+    where: { status: "live" },
+    data: { status: "stopped", endedAt: new Date() },
+  });
+  return count;
 }
 
 export function injectFault(runId: string, req: FaultRequest) {
   const entry = runs.get(runId);
   if (!entry) throw new Error(`Unknown or inactive runId ${runId}`);
   entry.engine.injectFault(req);
+}
+
+export function clearFaults(runId: string) {
+  const entry = runs.get(runId);
+  if (!entry) throw new Error(`Unknown or inactive runId ${runId}`);
+  entry.engine.clearFaults();
 }
 
 export function isActive(runId: string): boolean {
@@ -112,8 +160,20 @@ export function stepRun(runId: string): TickFrame | null {
     const latest = (entry.engine as OpsClient).getLatestFrame();
     if (!latest) return null; // startup grace period — server_ops hasn't ticked yet
     if (entry.lastFrameT === latest.t) {
+      // Re-broadcast of a frame we have already processed. It must carry the
+      // alerts AND the mission/prognosis assessment computed for it — the raw
+      // OpsClient frame still holds PENDING_MISSION, and returning that made
+      // the console drop to "assessing" (previously: a fabricated 100%
+      // "continue") every time the simulator had not advanced a full second
+      // between our 1 Hz polls, which is most ticks at low speed multipliers.
       const lastPersisted = entry.frameBuffer[entry.frameBuffer.length - 1];
-      return { ...latest, alerts: lastPersisted?.alerts ?? [] };
+      if (!lastPersisted) return null;
+      return {
+        ...latest,
+        alerts: lastPersisted.alerts,
+        mission: lastPersisted.mission,
+        prognosis: lastPersisted.prognosis,
+      };
     }
     entry.lastFrameT = latest.t;
     return finishTick(entry, runId, latest);
@@ -125,6 +185,28 @@ export function stepRun(runId: string): TickFrame | null {
 function finishTick(entry: RunEntry, runId: string, frame: TickFrame): TickFrame {
   const result = entry.alertEngine.evaluate(frame);
   frame.alerts = result.openAlerts;
+
+  // Reliability runs AFTER alerts because an open critical alert is decisive
+  // evidence in the recommendation ladder — a channel already past its limit
+  // outranks any probability the projection produces. Whatever mission block
+  // the backend supplied is replaced: neither backend has the mission profile,
+  // the trend history, or the limit set needed to compute this properly.
+  entry.reliability.ingest(frame);
+  frame.mission = entry.reliability.evaluate(frame);
+
+  // RUL band from the reliability engine's Monte Carlo crossing-time
+  // distribution. Both backends previously drew their band as rul*0.7 / rul*1.4
+  // around a point estimate — an interval that measured nothing. The point
+  // estimate itself is kept when a backend supplies one (the ML's own RUL head
+  // is a real model output); only the interval is replaced, and it stays null
+  // when no trial breaches a limit inside the horizon.
+  const band = entry.reliability.prognosis(frame);
+  frame.prognosis = {
+    rulSec: frame.prognosis.rulSec ?? band.rulSec,
+    rulLoSec: band.rulLoSec,
+    rulHiSec: band.rulHiSec,
+    basis: frame.prognosis.rulSec !== null ? `${frame.prognosis.basis}+mc_band` : band.basis,
+  };
 
   entry.frameBuffer.push(frame);
   if (entry.frameBuffer.length > BUFFER_SIZE) entry.frameBuffer.shift();
@@ -153,6 +235,12 @@ export function getFrameBuffer(runId: string): TickFrame[] {
 export function getLatestFrame(runId: string): TickFrame | undefined {
   const buf = runs.get(runId)?.frameBuffer;
   return buf && buf.length > 0 ? buf[buf.length - 1] : undefined;
+}
+
+/** Exposed for the /whatif route, which re-runs the projection at a different
+ * power setting against this run's already-accumulated trend history. */
+export function getReliability(runId: string): ReliabilityEngine | undefined {
+  return runs.get(runId)?.reliability;
 }
 
 async function flush(runId: string) {
@@ -187,6 +275,9 @@ async function flush(runId: string) {
       context: JSON.stringify(f.context),
       residualZ: JSON.stringify(f.residualZ),
       health: JSON.stringify(f.health),
+      // Nullable in the schema: a frame recorded before the ML produced its
+      // first evaluation has no EHI, and writing 100 there would poison every
+      // later chart and post-flight report with invented perfect health.
       ehi: f.health.ehi,
       faultLabel: f.diagnosis.label,
       confidence: f.diagnosis.confidence,
