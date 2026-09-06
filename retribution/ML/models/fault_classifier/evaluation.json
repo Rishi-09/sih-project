@@ -1,0 +1,21 @@
+{
+  "overall_accuracy": {
+    "baseline": 0.5740641635918091,
+    "retrained": 0.7957074050080275,
+    "change_pct": 38.60948923016536
+  },
+  "balanced_accuracy": {
+    "baseline": 0.12108814462022374,
+    "retrained": 0.5163462947321493,
+    "change_pct": 326.42184034745776
+  },
+  "macro_f1": {
+    "baseline": 0.07486093045501273,
+    "retrained": 0.4711071981837371,
+    "change_pct": 529.3098353444143
+  },
+  "weighted_f1": {
+    "baseline": 0.5090586890217301,
+    "retrained": 0.7876566522534985
+  }
+}

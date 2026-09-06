@@ -11,15 +11,21 @@ export interface FlightContext {
   throttle_pct: number;
 }
 
+// 8 subsystem categories — matches the real ML pipeline's subsystem_scores
+// exactly (Retribution's ML/docs/ML_BACKEND_HANDOFF.md §4), adopted as source
+// of truth rather than our earlier 6-category grouping: induction_fuel split
+// into induction/fuel/injection.
 export interface HealthBlock {
   ehi: number;
   subsystems: {
     lubrication: number;
     cooling: number;
     combustion: number;
-    inductionFuel: number;
+    fuel: number;
     mechanical: number;
+    induction: number;
     electrical: number;
+    injection: number;
   };
 }
 
@@ -98,9 +104,11 @@ export const SUBSYSTEMS: Record<string, readonly string[]> = {
   lubrication: ["oil_press_bar", "oil_temp_c"],
   cooling: ["coolant_temp_c", "cht_1", "cht_2", "cht_3", "cht_4"],
   combustion: ["egt_1", "egt_2", "egt_3", "egt_4"],
-  induction_fuel: ["map_kpa", "fuel_press_bar", "fuel_flow_lph", "inj_timing_deg"],
+  fuel: ["fuel_press_bar", "fuel_flow_lph"],
   mechanical: ["vib_rms_g", "rpm"],
+  induction: ["map_kpa"],
   electrical: ["bus_voltage_v", "alt_current_a"],
+  injection: ["inj_timing_deg"],
 };
 
 export interface MissionLeg {

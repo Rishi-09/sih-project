@@ -1,0 +1,19 @@
+{
+  "precision": {
+    "baseline": 0.6966254091268199,
+    "retrained": 0.7126813880126183
+  },
+  "recall": {
+    "baseline": 0.08962180440695795,
+    "retrained": 0.009112058312010557
+  },
+  "f1_score": {
+    "baseline": 0.15881220330454943,
+    "retrained": 0.0179940518953809,
+    "change_pct": -88.66960377038896
+  },
+  "healthy_false_positive_rate_pct": {
+    "baseline": 6.46419734613062,
+    "retrained": 0.6084233365219669
+  }
+}

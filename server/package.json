@@ -13,12 +13,14 @@
     "seed": "tsx src/db/seed.ts"
   },
   "dependencies": {
-    "groq-sdk": "^0.36.0",
     "@prisma/client": "^5.20.0",
+    "@types/ws": "^8.18.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "socket.io": "^4.7.5"
+    "groq-sdk": "^0.36.0",
+    "socket.io": "^4.7.5",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

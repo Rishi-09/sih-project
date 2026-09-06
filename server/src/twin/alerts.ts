@@ -3,6 +3,14 @@ import { AlertPayload, TickFrame } from "../types";
 
 const DEBOUNCE_TICKS = 4;
 
+// Real engine monitoring systems inhibit specific redline checks during a
+// defined startup/warm-up window. Confirmed against the real simulator, not
+// guessed: oil pressure is genuinely below its normal-operation floor before
+// the pump has spun up on a cold start — that's expected, not a fault. Only
+// the low-side check is inhibited; a high-side or caution-side reading during
+// startup would still be a real anomaly worth flagging.
+const STARTUP_SUPPRESSED_LOW = new Set(["oil_press_bar"]);
+
 interface Candidate {
   code: string;
   channel: string;
@@ -108,7 +116,8 @@ export class AlertEngine {
           });
         }
       }
-      if (limits.min !== undefined) {
+      const suppressLow = frame.phase === "startup" && STARTUP_SUPPRESSED_LOW.has(spec.id);
+      if (limits.min !== undefined && !suppressLow) {
         out.push({
           code: `REDLINE_LOW_${spec.id.toUpperCase()}`,
           channel: spec.id,
