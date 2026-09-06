@@ -15,9 +15,11 @@ export interface HealthBlock {
     lubrication: number;
     cooling: number;
     combustion: number;
-    inductionFuel: number;
+    fuel: number;
     mechanical: number;
+    induction: number;
     electrical: number;
+    injection: number;
   };
 }
 

@@ -1,0 +1,22 @@
+{
+  "n_classes": 17,
+  "classes": [
+    "bearing_wear",
+    "bearing_wear+induction_loss",
+    "cooling_failure",
+    "electrical_degradation",
+    "electrical_degradation+fuel_system_degradation",
+    "fuel_system_degradation",
+    "fuel_system_degradation+ignition_fault_cyl3",
+    "healthy",
+    "ignition_fault_cyl3",
+    "induction_loss",
+    "injector_fault_cyl3",
+    "injector_fault_cyl3+cooling_failure",
+    "lubrication_degradation",
+    "lubrication_degradation+bearing_wear",
+    "lubrication_degradation+cooling_failure",
+    "sensor_drift_oilpress",
+    "sensor_freeze_coolant"
+  ]
+}
