@@ -9,17 +9,24 @@ export interface FlightContext {
   throttle_pct: number;
 }
 
+/**
+ * null means NOT YET KNOWN, not "fine". The ML backend only emits a health
+ * evaluation every few simulated seconds, and before the first one arrives
+ * there is no health figure — reporting 100 there claimed a perfect engine on
+ * the strength of no data at all, which is the most dangerous possible default
+ * for a health monitor.
+ */
 export interface HealthBlock {
-  ehi: number;
+  ehi: number | null;
   subsystems: {
-    lubrication: number;
-    cooling: number;
-    combustion: number;
-    fuel: number;
-    mechanical: number;
-    induction: number;
-    electrical: number;
-    injection: number;
+    lubrication: number | null;
+    cooling: number | null;
+    combustion: number | null;
+    fuel: number | null;
+    mechanical: number | null;
+    induction: number | null;
+    electrical: number | null;
+    injection: number | null;
   };
 }
 
@@ -45,11 +52,53 @@ export interface PrognosisBlock {
   basis: string;
 }
 
+/**
+ * One channel's standing in the reliability projection. limiters[0] is the
+ * BINDING constraint — the single reason the mission is or is not at risk, and
+ * what the console leads with.
+ */
+export interface ReliabilityLimiter {
+  channel: string;
+  subsystem: string;
+  unit: string;
+  value: number;
+  limit: number;
+  limitKind: "high" | "low";
+  headroomPct: number; // 100 = at the normal-band edge, 0 = at the limit
+  beyondCaution: boolean; // already operating past the caution threshold
+  ratePerMin: number; // signed drift per minute, net of throttle
+  secondsToLimit: number | null; // null = not trending toward the limit
+}
+
+/**
+ * Mission reliability. `null` on every numeric field means NOT YET ASSESSED —
+ * the projection needs roughly a minute of telemetry before it can measure a
+ * trend, and until then there is no probability to report. It previously filled
+ * that gap with `ehi / 100` and a "continue" recommendation, which is a
+ * confident-looking answer built on no projection at all.
+ *
+ * `recommendation: "assessing"` is the matching verdict: we are not advising
+ * anything yet, as distinct from advising that the mission proceed.
+ */
 export interface MissionBlock {
-  pSuccess: number;
-  recommendation: "continue" | "derate" | "return_to_base" | "land_immediately";
-  safeEnduranceSec: number;
+  pSuccess: number | null;
+  pSuccessLo: number | null;
+  pSuccessHi: number | null;
+  recommendation: "assessing" | "continue" | "derate" | "return_to_base" | "land_immediately";
+  reason: string;
+  safeEnduranceSec: number | null;
+  missionRemainingSec: number;
   derateTo: number | null;
+  confidence: "low" | "medium" | "high";
+  basis: string;
+  limiters: ReliabilityLimiter[];
+}
+
+export interface WhatIfResult {
+  powerPct: number;
+  pSuccess: number | null; // null while the projection is still warming up
+  safeEnduranceSec: number | null;
+  basis: string;
 }
 
 export interface AlertPayload {
@@ -74,6 +123,11 @@ export interface TickFrame {
   prognosis: PrognosisBlock;
   mission: MissionBlock;
   alerts: AlertPayload[];
+  /** Faults commanded through the console for this run, in injection order.
+   * GROUND TRUTH, not a prediction — `diagnosis.label` is the model's read of
+   * the same situation and the two are meant to be compared. Always empty in
+   * real operation; nothing injects faults into a real engine. */
+  injectedFaults: string[];
 }
 
 // 19 engine channels — the original count. No factory per-cylinder CHT on the

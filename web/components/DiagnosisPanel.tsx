@@ -37,7 +37,8 @@ export function DiagnosisPanel({ frame }: { frame: TickFrame | null }) {
       {Object.entries(health.subsystems).map(([name, score]) => (
         <div className="kv-row" key={name}>
           <span className="k">{name}</span>
-          <span className="v">{score.toFixed(1)}</span>
+          {/* null = the backend has not scored this subsystem yet. */}
+          <span className="v">{score === null ? "—" : score.toFixed(1)}</span>
         </div>
       ))}
     </div>

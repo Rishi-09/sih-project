@@ -14,8 +14,9 @@ import { Twin3DLayout } from "@/components/twin3d/Twin3DLayout";
 import { ControlBar } from "@/components/ControlBar";
 import "./twin3d.css";
 
-function ehiClass(ehi: number | undefined): string {
-  if (ehi === undefined) return "";
+function ehiClass(ehi: number | null | undefined): string {
+  // null/undefined = not yet assessed. Neutral, deliberately not green.
+  if (ehi === null || ehi === undefined) return "unknown";
   if (ehi < 50) return "crit";
   if (ehi < 80) return "warn";
   return "";
@@ -28,6 +29,11 @@ export default function Twin3DPage() {
   const [engine, setEngine] = useState<EngineSummary | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [loadingEngine, setLoadingEngine] = useState(true);
+  // The fault controls get their own strip below the header rather than being
+  // squeezed into it. The header is a fixed-height, non-wrapping flex row, so
+  // anything taller than one line was being clipped behind the workspace —
+  // which is what hid the active-fault chips entirely.
+  const [showFaultBar, setShowFaultBar] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +67,11 @@ export default function Twin3DPage() {
     setRunId(null);
   }
 
+  async function handleClearFaults() {
+    if (!runId) return;
+    await api.clearFaults(runId);
+  }
+
   async function handleInjectFault(type: string, severity: number, cylinder?: number) {
     if (!runId) return;
     await api.injectFault(runId, type, severity, 0, cylinder);
@@ -91,6 +102,8 @@ export default function Twin3DPage() {
     );
   }
 
+  const injected = twin.latest?.injectedFaults ?? [];
+
   return (
     <div className="twin3d-page">
       {/* Top IDE Bar */}
@@ -111,14 +124,16 @@ export default function Twin3DPage() {
 
         <div className="topbar-spacer" />
 
-        <div className="topbar-controls">
-          <ControlBar
-            runId={runId}
-            onStart={handleStart}
-            onStop={handleStop}
-            onInjectFault={handleInjectFault}
-          />
-        </div>
+        {/* Fault state stays visible in the header even with the strip closed,
+            so the count is never hidden behind a collapsed panel. */}
+        <button
+          className={`faultbar-toggle ${injected.length > 0 ? "armed" : ""}`}
+          onClick={() => setShowFaultBar((v) => !v)}
+          aria-expanded={showFaultBar}
+        >
+          {injected.length > 0 ? `${injected.length} FAULT${injected.length > 1 ? "S" : ""}` : "NOMINAL"}
+          <span className="faultbar-caret">{showFaultBar ? "▴" : "▾"}</span>
+        </button>
 
         {runId && (
           <span className={`conn-status conn-${twin.status}`} style={{ marginLeft: 8 }}>
@@ -128,10 +143,26 @@ export default function Twin3DPage() {
 
         {twin.latest && (
           <div className={`ehi-ring ${ehiClass(twin.latest.health.ehi)}`} style={{ width: 36, height: 36, fontSize: 12, marginLeft: 8 }}>
-            {Math.round(twin.latest.health.ehi)}
+            {twin.latest.health.ehi === null ? "—" : Math.round(twin.latest.health.ehi)}
           </div>
         )}
       </header>
+
+      {/* Fault / scenario strip — its own row in the page's flex column, so it
+          takes real height and pushes the workspace down instead of overflowing
+          the fixed-height header. */}
+      {showFaultBar && (
+        <div className="twin3d-faultbar">
+          <ControlBar
+            runId={runId}
+            injected={injected}
+            onStart={handleStart}
+            onStop={handleStop}
+            onInjectFault={handleInjectFault}
+            onClearFaults={handleClearFaults}
+          />
+        </div>
+      )}
 
       {/* Main 4-Panel IDE View */}
       <Twin3DLayout

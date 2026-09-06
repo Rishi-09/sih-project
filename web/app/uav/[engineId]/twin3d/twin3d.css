@@ -721,3 +721,55 @@
     height: 200px;
   }
 }
+
+/* ── Fault / scenario strip ───────────────────────────────────────────────────
+   Its own row in .twin3d-page's flex column. The controls used to live inside
+   .twin3d-topbar, which is a fixed 48px non-wrapping flex row — the moment the
+   control bar grew a second line (the active-fault chips) it overflowed and was
+   clipped behind the workspace. Giving it real height fixes that structurally
+   rather than by shrinking the contents until they happen to fit. */
+.twin3d-faultbar {
+  flex-shrink: 0;
+  padding: 10px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.faultbar-toggle {
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  padding: 4px 10px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.faultbar-toggle:hover { border-color: var(--accent); color: var(--ink-2); }
+/* Armed state is legible with the strip collapsed — the count must never be
+   the only thing telling you faults are live. */
+.faultbar-toggle.armed {
+  background: var(--caution-soft);
+  border-color: var(--caution);
+  color: var(--caution);
+}
+.faultbar-caret { font-size: 9px; opacity: 0.7; }
+
+/* Ground-truth injected faults in the log stream, beside the model's verdict. */
+.log-injected {
+  color: var(--caution);
+  font-family: var(--font-mono);
+  margin-left: 10px;
+}
+
+/* "Not yet assessed" is its own visual state everywhere a score is shown —
+   deliberately neutral, never the healthy colour. */
+.ehi-ring.unknown { border-color: var(--rule); color: var(--ink-3); }
+.subsystem-card.sub-unknown { border-left-color: var(--rule); }
+.subsystem-card.sub-unknown .sub-score { color: var(--ink-3); }
+.ehi-banner-val.ehi-unknown { color: var(--ink-3); }

@@ -13,7 +13,9 @@ function fmtSec(s: number | null): string {
   return `${m}m ${r}s`;
 }
 
-function getEhiGrade(ehi: number) {
+function getEhiGrade(ehi: number | null) {
+  // No evaluation yet is its own grade — not the top one.
+  if (ehi === null) return "ehi-unknown";
   if (ehi >= 80) return "ehi-good";
   if (ehi >= 50) return "ehi-warn";
   return "ehi-crit";
@@ -82,12 +84,15 @@ export function MLPredictionPanel({ frame }: Props) {
         <div className="section-title">SUBSYSTEM HEALTH INDICES</div>
         <div className="subsystems-grid">
           {Object.entries(health.subsystems).map(([name, val]) => {
-            const score = typeof val === "number" ? val : 100;
-            const grade = score >= 80 ? "sub-good" : score >= 50 ? "sub-warn" : "sub-crit";
+            // null = not yet scored. Previously defaulted to 100, painting an
+            // un-evaluated subsystem bright green.
+            const score = typeof val === "number" ? val : null;
+            const grade =
+              score === null ? "sub-unknown" : score >= 80 ? "sub-good" : score >= 50 ? "sub-warn" : "sub-crit";
             return (
               <div key={name} className={`subsystem-card ${grade}`}>
                 <span className="sub-name">{name.replace(/_/g, " ")}</span>
-                <span className="sub-score">{score.toFixed(0)}</span>
+                <span className="sub-score">{score === null ? "—" : score.toFixed(0)}</span>
               </div>
             );
           })}
@@ -104,7 +109,7 @@ export function MLPredictionPanel({ frame }: Props) {
           </div>
           <div className="prog-metric-row">
             <span className="prog-k">P(MISSION SUCCESS)</span>
-            <span className="prog-v">{Math.round(mission.pSuccess * 100)}%</span>
+            <span className="prog-v">{mission.pSuccess === null ? "—" : `${Math.round(mission.pSuccess * 100)}%`}</span>
           </div>
           <div className="prog-metric-row">
             <span className="prog-k">SAFE ENDURANCE</span>
@@ -122,7 +127,7 @@ export function MLPredictionPanel({ frame }: Props) {
       <div className="ehi-banner">
         <div className="ehi-banner-text">ENGINE HEALTH INDEX (EHI)</div>
         <div className={`ehi-banner-val ${getEhiGrade(health.ehi)}`}>
-          {Math.round(health.ehi)} / 100
+          {health.ehi === null ? "—" : Math.round(health.ehi)} / 100
         </div>
       </div>
     </div>

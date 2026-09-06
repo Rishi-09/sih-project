@@ -23,6 +23,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ type, severity, onsetDelay, cylinder }),
     }),
+  clearFaults: (runId: string) => request<{ ok: boolean }>(`/api/runs/${runId}/faults`, { method: "DELETE" }),
+  runStatus: (runId: string) => request<{ active: boolean; status: string }>(`/api/runs/${runId}/status`),
   report: (runId: string, kind: "advisory" | "debrief" = "advisory") =>
     request<{ contentMd: string; source: string; model?: string }>(`/api/runs/${runId}/report`, {
       method: "POST",
@@ -34,7 +36,7 @@ export const api = {
       body: JSON.stringify({ question }),
     }),
   whatif: (runId: string, powerPct: number) =>
-    request<{ pSuccess: number; safeEnduranceSec: number }>(`/api/runs/${runId}/whatif`, {
+    request<import("./types").WhatIfResult>(`/api/runs/${runId}/whatif`, {
       method: "POST",
       body: JSON.stringify({ powerPct }),
     }),

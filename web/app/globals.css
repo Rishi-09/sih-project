@@ -60,18 +60,104 @@ code, .mono { font-family: var(--font-mono); }
 .conn-degraded, .conn-connecting { background: var(--caution-soft); color: var(--caution); }
 .conn-stopped, .conn-replay { background: var(--surface-2); color: var(--ink-3); }
 
-.ehi-ring {
-  width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  font-family: var(--font-mono); font-weight: 700; font-size: 15px; border: 3px solid var(--ok); color: var(--ok);
-}
-.ehi-ring.warn { border-color: var(--caution); color: var(--caution); }
-.ehi-ring.crit { border-color: var(--critical); color: var(--critical); }
-
-.grid-main { display: grid; grid-template-columns: 1fr; gap: 16px; }
-@media (min-width: 1000px) { .grid-main { grid-template-columns: 7fr 5fr; align-items: start; } }
+/* Engine health, demoted to a chip. It is condition-now, not mission-outcome —
+   the headline below owns the decision, and two competing big numbers in a
+   header is exactly the confusion this redesign set out to remove. */
+.ehi-chip { display: flex; align-items: baseline; gap: 5px; color: var(--ink-2); }
+.ehi-chip .ehi-num { font-family: var(--font-mono); font-size: 16px; font-weight: 600; }
+.ehi-chip .ehi-cap { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
 
 .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px; margin-bottom: 16px; }
 .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin: 0 0 14px; }
+.panel-controls { margin-top: 24px; opacity: .78; }
+.panel-controls:hover, .panel-controls:focus-within { opacity: 1; }
+.btn-quiet { padding: 5px 11px; font-size: 12px; color: var(--ink-3); }
+
+/* ---- level 1: the decision ---- */
+/* One tone per state, set on the container and inherited by everything inside,
+   so the whole block reads as a single signal instead of a field of chips. */
+.mission {
+  --tone: var(--ok);
+  --tone-soft: var(--ok-soft);
+  border: 1px solid var(--rule); border-left: 4px solid var(--tone);
+  background: var(--surface); border-radius: 8px; padding: 20px 22px; margin-bottom: 16px;
+}
+/* Not-yet-assessed is deliberately neutral grey — it must never inherit the
+   healthy green, which would read as an all-clear nothing has evaluated. */
+.mission.tone-idle { --tone: var(--ink-3); --tone-soft: var(--surface-2); }
+.mission.tone-caution { --tone: var(--caution); --tone-soft: var(--caution-soft); }
+.mission.tone-critical { --tone: var(--critical); --tone-soft: var(--critical-soft); }
+
+.mission-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+.action-label { font-size: 27px; font-weight: 700; line-height: 1.15; color: var(--tone); letter-spacing: -.01em; }
+.action-sub { font-size: 13px; color: var(--ink-2); margin-top: 3px; }
+.mission-p { text-align: right; flex: none; }
+.p-value { font-family: var(--font-mono); font-size: 34px; font-weight: 700; line-height: 1; color: var(--tone); }
+.p-caption { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); margin-top: 4px; }
+.p-band { display: block; font-family: var(--font-mono); text-transform: none; letter-spacing: 0; }
+
+.mission-reason { font-size: 14.5px; line-height: 1.5; color: var(--ink); margin: 14px 0 0; max-width: 70ch; }
+
+.endurance { margin-top: 18px; }
+.endurance-bar { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.endurance-fill { height: 100%; border-radius: 4px; transition: width .4s ease; }
+.endurance-fill.covers { background: var(--ok); }
+.endurance-fill.short { background: var(--critical); }
+.endurance-legend { display: flex; justify-content: space-between; gap: 12px; margin-top: 7px; font-size: 12px; color: var(--ink-3); flex-wrap: wrap; }
+.endurance-legend strong { color: var(--ink-2); font-family: var(--font-mono); font-weight: 600; }
+.endurance-legend .spare { color: var(--ok); }
+.endurance-legend .short { color: var(--critical); font-weight: 600; }
+
+.mission-meta { display: flex; gap: 10px; align-items: center; margin-top: 14px; font-size: 10.5px;
+  text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
+.conf { padding: 2px 8px; border-radius: 3px; background: var(--surface-2); }
+.conf-high { color: var(--ok); }
+.conf-medium { color: var(--caution); }
+.conf-low { color: var(--ink-3); }
+.mission-meta .basis { font-family: var(--font-mono); }
+
+/* ---- level 2: the evidence ---- */
+.grid-evidence { display: grid; grid-template-columns: 1fr; gap: 16px; }
+@media (min-width: 900px) { .grid-evidence { grid-template-columns: 3fr 2fr; align-items: start; } }
+
+.limiter-list { display: flex; flex-direction: column; gap: 14px; }
+.limiter-empty { color: var(--ink-3); font-size: 13px; margin: 0; }
+.limiter { --tone: var(--ok); }
+.limiter.tone-caution { --tone: var(--caution); }
+.limiter.tone-critical { --tone: var(--critical); }
+.limiter-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.limiter-name { font-size: 13.5px; font-weight: 600; }
+.limiter-now { font-family: var(--font-mono); font-size: 13px; color: var(--tone); }
+.limiter-limit { color: var(--ink-3); }
+.margin-bar { height: 5px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin: 6px 0 5px; }
+.margin-fill { height: 100%; background: var(--tone); border-radius: 3px; transition: width .4s ease; }
+.limiter-foot { display: flex; justify-content: space-between; gap: 12px; font-size: 11.5px; color: var(--ink-3); }
+.limiter-eta { color: var(--tone); }
+.limiter-eta.steady { color: var(--ink-3); }
+
+.whatif-row { display: flex; align-items: center; gap: 10px; }
+.whatif-row input[type="range"] { flex: 1; }
+.whatif-pct { font-family: var(--font-mono); font-size: 13px; width: 42px; text-align: right; }
+.whatif-out { margin-top: 10px; font-size: 13px; }
+.whatif-out strong { font-family: var(--font-mono); font-size: 15px; }
+.whatif-out .muted { color: var(--ink-3); }
+.delta-up { color: var(--ok); font-family: var(--font-mono); }
+.delta-down { color: var(--critical); font-family: var(--font-mono); }
+
+/* ---- level 3: everything else, one at a time ---- */
+.details { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; margin-bottom: 16px; }
+.tabbar { display: flex; gap: 2px; border-bottom: 1px solid var(--rule); padding: 0 8px; overflow-x: auto; }
+.tab {
+  background: none; border: none; border-bottom: 2px solid transparent; color: var(--ink-3);
+  padding: 11px 14px; font-size: 12.5px; white-space: nowrap;
+}
+.tab:hover { color: var(--ink-2); }
+.tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+.tab-badge {
+  display: inline-block; margin-left: 6px; min-width: 17px; padding: 1px 5px; border-radius: 9px;
+  background: var(--critical-soft); color: var(--critical); font-family: var(--font-mono); font-size: 10.5px;
+}
+.tabpanel { padding: 16px 18px; }
 
 .sensor-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .sensor-cell { background: var(--surface-2); border-radius: 6px; padding: 9px 11px; border: 1px solid transparent; }
@@ -96,15 +182,18 @@ code, .mono { font-family: var(--font-mono); }
 .kv-row .k { color: var(--ink-3); }
 .kv-row .v { font-family: var(--font-mono); }
 
-.rec-pill { display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+/* Still used by the 3D twin page's header, which keeps its own layout. */
+.ehi-ring {
+  width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-weight: 700; font-size: 15px; border: 3px solid var(--ok); color: var(--ok);
+}
+.ehi-ring.warn { border-color: var(--caution); color: var(--caution); }
+.ehi-ring.crit { border-color: var(--critical); color: var(--critical); }
+
+/* Recommendation colours, shared with the 3D twin page's .rec-badge. */
 .rec-continue { background: var(--ok-soft); color: var(--ok); }
 .rec-derate, .rec-return_to_base { background: var(--caution-soft); color: var(--caution); }
 .rec-land_immediately { background: var(--critical-soft); color: var(--critical); }
-
-.slider-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
-.slider-row input[type="range"] { flex: 1; }
-.slider-row .pct { font-family: var(--font-mono); width: 44px; text-align: right; }
-.whatif-result { margin-top: 8px; font-size: 12px; color: var(--ink-2); font-family: var(--font-mono); }
 
 .alert-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--rule); font-size: 12.5px; }
 .alert-item:last-child { border-bottom: none; }
@@ -134,3 +223,19 @@ code, .mono { font-family: var(--font-mono); }
 
 .empty-state { text-align: center; padding: 60px 20px; color: var(--ink-3); }
 .empty-state .btn-primary { margin-top: 16px; font-size: 14px; padding: 10px 22px; }
+
+/* ---- scenario controls ---- */
+/* The active-fault chips are echoed from the telemetry frame, not from local
+   state: they are the console's proof that an injection was accepted. Faults
+   accumulate, and without this readout a second injection was indistinguishable
+   from a no-op. */
+.controls { display: flex; flex-direction: column; gap: 12px; }
+.control-bar .spacer { flex: 1; }
+.hint { font-size: 11.5px; color: var(--ink-3); }
+.injected-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.injected-cap { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
+.injected-chip {
+  font-family: var(--font-mono); font-size: 11.5px; padding: 2px 9px; border-radius: 3px;
+  background: var(--caution-soft); color: var(--caution); border: 1px solid transparent;
+}
+.control-error { font-size: 12px; color: var(--critical); }
