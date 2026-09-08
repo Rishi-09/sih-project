@@ -1,0 +1,243 @@
+{
+  "contract_version": "2.0.0",
+  "engine_model": "Rotax 915 iS A / iSC A",
+  "total_channels": 24,
+  "context_channels_count": 5,
+  "engine_sensor_channels_count": 19,
+  "subsystems": {
+    "lubrication": ["oil_press_bar", "oil_temp_c"],
+    "cooling": ["coolant_temp_c", "cht_1", "cht_2", "cht_3", "cht_4"],
+    "combustion": ["egt_1", "egt_2", "egt_3", "egt_4"],
+    "induction_fuel": ["map_kpa", "fuel_press_bar", "fuel_flow_lph", "inj_timing_deg"],
+    "mechanical": ["vib_rms_g", "rpm"],
+    "electrical": ["bus_voltage_v", "alt_current_a"]
+  },
+  "channels": {
+    "throttle_pct": {
+      "type": "context",
+      "unit": "%",
+      "source": "measured",
+      "description": "Throttle lever command"
+    },
+    "alt_m": {
+      "type": "context",
+      "unit": "m",
+      "source": "measured",
+      "description": "Barometric / GPS altitude"
+    },
+    "oat_c": {
+      "type": "context",
+      "unit": "°C",
+      "source": "measured",
+      "description": "Outside Air Temperature (ISA lapse)"
+    },
+    "ias_kt": {
+      "type": "context",
+      "unit": "knots",
+      "source": "measured",
+      "description": "Indicated Airspeed"
+    },
+    "phase": {
+      "type": "context",
+      "unit": "string",
+      "source": "derived",
+      "description": "Mission flight phase"
+    },
+    "rpm": {
+      "type": "engine",
+      "subsystem": "mechanical",
+      "unit": "RPM",
+      "source": "measured",
+      "normal_min": 1400.0,
+      "normal_max": 5500.0,
+      "caution_max": 5800.0,
+      "redline": 5850.0
+    },
+    "vib_rms_g": {
+      "type": "engine",
+      "subsystem": "mechanical",
+      "unit": "g",
+      "source": "measured",
+      "normal_min": 0.05,
+      "normal_max": 0.25,
+      "caution_max": 0.50,
+      "redline": 1.00
+    },
+    "egt_1": {
+      "type": "engine",
+      "subsystem": "combustion",
+      "unit": "°C",
+      "source": "measured",
+      "normal_min": 750.0,
+      "normal_max": 850.0,
+      "caution_max": 880.0,
+      "redline": 950.0
+    },
+    "egt_2": {
+      "type": "engine",
+      "subsystem": "combustion",
+      "unit": "°C",
+      "source": "measured",
+      "normal_min": 750.0,
+      "normal_max": 850.0,
+      "caution_max": 880.0,
+      "redline": 950.0
+    },
+    "egt_3": {
+      "type": "engine",
+      "subsystem": "combustion",
+      "unit": "°C",
+      "source": "measured",
+      "normal_min": 750.0,
+      "normal_max": 850.0,
+      "caution_max": 880.0,
+      "redline": 950.0
+    },
+    "egt_4": {
+      "type": "engine",
+      "subsystem": "combustion",
+      "unit": "°C",
+      "source": "measured",
+      "normal_min": 750.0,
+      "normal_max": 850.0,
+      "caution_max": 880.0,
+      "redline": 950.0
+    },
+    "cht_1": {
+      "type": "engine",
+      "subsystem": "cooling",
+      "unit": "°C",
+      "source": "estimated",
+      "note": "Physics-informed estimate from EGT, fuel flow, and coolant temp. Band adapted from Rotax 912/914 docs with 150°C liquid-cooled ceiling.",
+      "normal_min": 80.0,
+      "normal_max": 110.0,
+      "caution_max": 135.0,
+      "redline": 150.0
+    },
+    "cht_2": {
+      "type": "engine",
+      "subsystem": "cooling",
+      "unit": "°C",
+      "source": "estimated",
+      "note": "Physics-informed estimate from EGT, fuel flow, and coolant temp.",
+      "normal_min": 80.0,
+      "normal_max": 110.0,
+      "caution_max": 135.0,
+      "redline": 150.0
+    },
+    "cht_3": {
+      "type": "engine",
+      "subsystem": "cooling",
+      "unit": "°C",
+      "source": "estimated",
+      "note": "Physics-informed estimate from EGT, fuel flow, and coolant temp.",
+      "normal_min": 80.0,
+      "normal_max": 110.0,
+      "caution_max": 135.0,
+      "redline": 150.0
+    },
+    "cht_4": {
+      "type": "engine",
+      "subsystem": "cooling",
+      "unit": "°C",
+      "source": "estimated",
+      "note": "Physics-informed estimate from EGT, fuel flow, and coolant temp.",
+      "normal_min": 80.0,
+      "normal_max": 110.0,
+      "caution_max": 135.0,
+      "redline": 150.0
+    },
+    "coolant_temp_c": {
+      "type": "engine",
+      "subsystem": "cooling",
+      "unit": "°C",
+      "source": "measured",
+      "normal_min": 70.0,
+      "normal_max": 105.0,
+      "caution_max": 115.0,
+      "redline": 120.0
+    },
+    "oil_press_bar": {
+      "type": "engine",
+      "subsystem": "lubrication",
+      "unit": "bar",
+      "source": "measured",
+      "normal_min": 2.0,
+      "normal_max": 5.0,
+      "caution_min": 1.5,
+      "redline_low": 1.5,
+      "redline_high": 7.0
+    },
+    "oil_temp_c": {
+      "type": "engine",
+      "subsystem": "lubrication",
+      "unit": "°C",
+      "source": "measured",
+      "normal_min": 90.0,
+      "normal_max": 110.0,
+      "caution_max": 125.0,
+      "redline": 130.0
+    },
+    "map_kpa": {
+      "type": "engine",
+      "subsystem": "induction_fuel",
+      "unit": "kPa",
+      "source": "measured",
+      "normal_min": 35.0,
+      "normal_max": 135.0,
+      "caution_max": 145.0,
+      "redline": 154.0
+    },
+    "fuel_flow_lph": {
+      "type": "engine",
+      "subsystem": "induction_fuel",
+      "unit": "L/h",
+      "source": "measured",
+      "normal_min": 5.0,
+      "normal_max": 28.0,
+      "caution_max": 35.0,
+      "redline": 40.0
+    },
+    "fuel_press_bar": {
+      "type": "engine",
+      "subsystem": "induction_fuel",
+      "unit": "bar",
+      "source": "measured",
+      "normal_min": 2.8,
+      "normal_max": 3.2,
+      "caution_min": 2.5,
+      "redline_low": 2.2,
+      "redline_high": 3.8
+    },
+    "inj_timing_deg": {
+      "type": "engine",
+      "subsystem": "induction_fuel",
+      "unit": "°BTDC",
+      "source": "measured",
+      "normal_min": 22.0,
+      "normal_max": 28.0,
+      "caution_max": 30.0,
+      "redline": 32.0
+    },
+    "bus_voltage_v": {
+      "type": "engine",
+      "subsystem": "electrical",
+      "unit": "V",
+      "source": "measured",
+      "normal_min": 13.8,
+      "normal_max": 14.6,
+      "caution_min": 12.8,
+      "redline_low": 11.5
+    },
+    "alt_current_a": {
+      "type": "engine",
+      "subsystem": "electrical",
+      "unit": "A",
+      "source": "measured",
+      "normal_min": 18.0,
+      "normal_max": 35.0,
+      "caution_max": 40.0,
+      "redline": 45.0
+    }
+  }
+}

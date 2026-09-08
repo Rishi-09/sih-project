@@ -2,10 +2,25 @@ import fs from "fs";
 import path from "path";
 
 /**
- * /contract/sensors.json IS ../Retribution/sensors.json, copied verbatim — R1's
- * simulator repo is the source of truth for this schema, by team decision
- * (2026-09-01). This file is the ONLY place that adapts Retribution's raw shape
- * (a `channels` dict keyed by id, `normal_min`/`normal_max`/`caution_min`/
+ * server/contract/sensors.json and server/contract/faults.json are committed
+ * COPIES of the monorepo's top-level /contract/*.json (which is itself R1's
+ * Retribution simulator's sensors.json, verbatim — team decision, 2026-09-01).
+ *
+ * They live inside server/ rather than being read from ../../../contract via
+ * __dirname, because that path assumes the whole monorepo is present at
+ * runtime — true in local dev, false on any host that deploys `server/` as its
+ * own build root (Railway, Render, a Docker build context scoped to server/,
+ * ...). There, /contract sits outside the build context entirely and the file
+ * is simply never copied in: `ENOENT /contract/sensors.json` in production,
+ * working fine in dev, is exactly that failure mode.
+ *
+ * Consequence: this copy can drift from the monorepo original. If R1's
+ * sensors.json or faults.json changes, re-run:
+ *   cp contract/sensors.json contract/faults.json server/contract/
+ * from the repo root. Small enough not to automate for an MVP.
+ *
+ * This file is the ONLY place that adapts Retribution's raw shape (a
+ * `channels` dict keyed by id, `normal_min`/`normal_max`/`caution_min`/
  * `caution_max`/`redline`/`redline_low`/`redline_high`/`source`) into the
  * internal SensorSpec shape the rest of this server was already built against.
  * Nothing downstream of this module (alerts.ts, stubTwin.ts, routes/) needs to
@@ -55,7 +70,11 @@ export interface SensorContract {
   phases: string[];
 }
 
-const contractPath = path.join(__dirname, "../../../contract/sensors.json");
+// server/contract/, not ../../../contract — see the file-header comment above.
+// __dirname is server/src/twin in dev (tsx) and server/dist/twin once built
+// (tsc mirrors the src/ tree under dist/), so "../../contract" reaches
+// server/contract in both cases.
+const contractPath = path.join(__dirname, "../../contract/sensors.json");
 const raw: RawSensorFile = JSON.parse(fs.readFileSync(contractPath, "utf-8"));
 
 function toSpec(id: string, ch: RawChannel): SensorSpec {
@@ -142,7 +161,7 @@ interface RawFaultsFile {
   sensorFaults: SensorFaultSpec[];
 }
 
-const faultsPath = path.join(__dirname, "../../../contract/faults.json");
+const faultsPath = path.join(__dirname, "../../contract/faults.json"); // server/contract/, see above
 const rawFaults: RawFaultsFile = JSON.parse(fs.readFileSync(faultsPath, "utf-8"));
 
 export const FAULT_CLASSES: FaultClass[] = rawFaults.classes;

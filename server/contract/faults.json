@@ -1,0 +1,111 @@
+{
+  "_source": "Transcribed from ../Retribution/simulator/faults.py (FaultManager._build_profiles, class FaultType) — Retribution has no faults.json of its own; this file exists so the console/backend has the same cascade data as machine-readable JSON, matching the sensors.json precedent. Every id, delaySec, rampSec, delta, and shape below must match faults.py exactly — if they drift, re-generate this file from the Python source, don't hand-tune it. Recorded 2026-09-01.",
+  "_note": "8 engine fault classes + healthy = 9 classes for the fault classifier (ml_procedure.md §7.4). The 2 sensor faults are a 10th and 11th taxonomy entry, each detected via a separate mechanism (ml_procedure.md §7.6), never classifier classes. ignition_fault_cyl3 and injector_fault_cyl3 are hardcoded to cylinder 3 in Retribution's simulator today — see SIMULATOR_CONTEXT.md §14 'Known Limitations'. Multi-fault composition is additive-sum-of-deltas only; no fault profile here uses a gain_multiplier other than the neutral default (1.0), so gain is not modeled.",
+  "classes": [
+    { "id": "healthy", "label": "Healthy", "subsystems": [] },
+    {
+      "id": "lubrication_degradation",
+      "label": "Lubrication Degradation",
+      "subsystems": ["lubrication", "cooling", "mechanical"],
+      "cascade": [
+        { "channel": "oil_press_bar", "delaySec": 0, "rampSec": 60, "delta": -2.2, "shape": "linear" },
+        { "channel": "oil_temp_c", "delaySec": 60, "rampSec": 80, "delta": 32.0, "shape": "linear" },
+        { "channel": "coolant_temp_c", "delaySec": 120, "rampSec": 90, "delta": 14.0, "shape": "linear" },
+        { "channel": "vib_rms_g", "delaySec": 180, "rampSec": 60, "delta": 0.45, "shape": "linear" }
+      ]
+    },
+    {
+      "id": "cooling_failure",
+      "label": "Cooling System Failure",
+      "subsystems": ["cooling"],
+      "cascade": [
+        { "channel": "coolant_temp_c", "delaySec": 0, "rampSec": 45, "delta": 38.0, "shape": "linear" },
+        { "channel": "oil_temp_c", "delaySec": 60, "rampSec": 120, "delta": 18.0, "shape": "linear" }
+      ]
+    },
+    {
+      "id": "ignition_fault_cyl3",
+      "label": "Ignition Fault (cylinder 3)",
+      "subsystems": ["combustion", "cooling", "mechanical"],
+      "cylinder": 3,
+      "cascade": [
+        { "channel": "egt_3", "delaySec": 0, "rampSec": 5, "delta": -280.0, "shape": "step" },
+        { "channel": "rpm", "delaySec": 0, "rampSec": 10, "delta": -180.0, "shape": "linear" },
+        { "channel": "vib_rms_g", "delaySec": 0, "rampSec": 15, "delta": 0.22, "shape": "step" }
+      ]
+    },
+    {
+      "id": "injector_fault_cyl3",
+      "label": "Injector Fault (cylinder 3)",
+      "subsystems": ["induction_fuel", "combustion"],
+      "cylinder": 3,
+      "cascade": [
+        { "channel": "egt_3", "delaySec": 0, "rampSec": 15, "delta": 95.0, "shape": "linear" },
+        { "channel": "inj_timing_deg", "delaySec": 0, "rampSec": 10, "delta": 3.5, "shape": "linear" },
+        { "channel": "vib_rms_g", "delaySec": 10, "rampSec": 25, "delta": 0.12, "shape": "linear" }
+      ]
+    },
+    {
+      "id": "induction_loss",
+      "label": "Induction / MAP Loss",
+      "subsystems": ["induction_fuel", "mechanical"],
+      "cascade": [
+        { "channel": "map_kpa", "delaySec": 0, "rampSec": 20, "delta": -38.0, "shape": "linear" },
+        { "channel": "fuel_flow_lph", "delaySec": 5, "rampSec": 20, "delta": -9.0, "shape": "linear" },
+        { "channel": "rpm", "delaySec": 10, "rampSec": 30, "delta": -400.0, "shape": "linear" }
+      ]
+    },
+    {
+      "id": "bearing_wear",
+      "label": "Bearing Wear",
+      "subsystems": ["mechanical", "lubrication"],
+      "cascade": [
+        { "channel": "vib_rms_g", "delaySec": 0, "rampSec": 90, "delta": 0.85, "shape": "exponential" },
+        { "channel": "rpm", "delaySec": 30, "rampSec": 60, "delta": -140.0, "shape": "linear" },
+        { "channel": "oil_temp_c", "delaySec": 60, "rampSec": 120, "delta": 14.0, "shape": "linear" }
+      ]
+    },
+    {
+      "id": "fuel_system_degradation",
+      "label": "Fuel System Degradation",
+      "subsystems": ["induction_fuel"],
+      "cascade": [
+        { "channel": "fuel_press_bar", "delaySec": 0, "rampSec": 25, "delta": -0.70, "shape": "linear" },
+        { "channel": "fuel_flow_lph", "delaySec": 5, "rampSec": 30, "delta": -7.5, "shape": "linear" },
+        { "channel": "egt_1", "delaySec": 15, "rampSec": 35, "delta": 85.0, "shape": "linear" },
+        { "channel": "egt_2", "delaySec": 15, "rampSec": 35, "delta": 85.0, "shape": "linear" },
+        { "channel": "egt_3", "delaySec": 15, "rampSec": 35, "delta": 85.0, "shape": "linear" },
+        { "channel": "egt_4", "delaySec": 15, "rampSec": 35, "delta": 85.0, "shape": "linear" }
+      ]
+    },
+    {
+      "id": "electrical_degradation",
+      "label": "Electrical / Charging Degradation",
+      "subsystems": ["electrical"],
+      "cascade": [
+        { "channel": "alt_current_a", "delaySec": 0, "rampSec": 2, "delta": -30.0, "shape": "step" },
+        { "channel": "bus_voltage_v", "delaySec": 0, "rampSec": 30, "delta": -2.5, "shape": "linear" }
+      ]
+    }
+  ],
+  "sensorFaults": [
+    {
+      "id": "sensor_freeze_coolant",
+      "label": "Sensor Freeze (coolant)",
+      "channel": "coolant_temp_c",
+      "mode": "frozen",
+      "note": "Locked to coolant_temp_c only — Retribution does not randomize which channel freezes. The engine may be entirely healthy underneath; this is an instrumentation fault."
+    },
+    {
+      "id": "sensor_drift_oilpress",
+      "label": "Sensor Drift (oil pressure)",
+      "channel": "oil_press_bar",
+      "mode": "drift",
+      "delaySec": 0,
+      "rampSec": 120,
+      "delta": -1.8,
+      "shape": "linear",
+      "note": "Locked to oil_press_bar only — Retribution does not randomize which channel drifts. Same linear-ramp mechanics as an engine fault cascade step, applied to a sensor reading rather than the physical channel."
+    }
+  ]
+}
