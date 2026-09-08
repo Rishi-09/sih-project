@@ -1,13 +1,16 @@
 // Twin system data model — see the published plan (§B3) and ml_procedure.md.
-// SQLite for dev; swap provider/url to Postgres for deploy, schema is portable.
+// TiDB Cloud is MySQL-compatible. Keep the connection string in DATABASE_URL.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider     = "mysql"
+  url          = env("DATABASE_URL")
+  // TiDB clusters may have database-level foreign keys disabled. Prisma
+  // enforces relations at the client layer, so the schema remains portable.
+  relationMode = "prisma"
 }
 
 model Engine {
@@ -23,7 +26,7 @@ model Run {
   scenario        String // S1..S6 or "custom"
   seed            Int
   contractVersion String
-  missionProfile  String // JSON-encoded (SQLite has no native Json type)
+  missionProfile  String @db.Text // JSON-encoded (TiDB has no native Json type)
   status          String // starting | live | degraded | replay | stopped
   startedAt       DateTime  @default(now())
   endedAt         DateTime?
@@ -64,9 +67,9 @@ model Frame {
   busVoltageV  Float
   altCurrentA  Float
 
-  context   String // JSON-encoded FlightContext
-  residualZ String // JSON-encoded Record<string, number>
-  health    String // JSON-encoded HealthBlock
+  context   String @db.Text // JSON-encoded FlightContext
+  residualZ String @db.Text // JSON-encoded Record<string, number>
+  health    String @db.Text // JSON-encoded HealthBlock
   ehi       Float? // duplicated out of `health` for fast charting; null = not yet assessed
 
   faultLabel         String?
@@ -88,7 +91,7 @@ model Alert {
   code        String
   severity    String
   channel     String
-  message     String
+  message     String @db.Text
   clearedAtT  Int?
   ackedAt     DateTime?
   createdAt   DateTime  @default(now())
@@ -102,28 +105,32 @@ model Report {
   id        String   @id @default(cuid())
   runId     String
   kind      String // advisory | debrief
-  contentMd String
+  contentMd String @db.Text
   source    String // llm | offline
   model     String?
   createdAt DateTime @default(now())
 
   run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
 }
 
 model ChatMessage {
   id        String   @id @default(cuid())
   runId     String
   role      String // user | assistant
-  content   String
+  content   String @db.Text
   createdAt DateTime @default(now())
 
   run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
 }
 
 model ModelVersion {
   id        String   @id @default(cuid())
   name      String
   version   String
-  metrics   String // JSON-encoded
+  metrics   String @db.Text // JSON-encoded
   createdAt DateTime @default(now())
 }

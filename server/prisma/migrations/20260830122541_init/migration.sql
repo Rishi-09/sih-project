@@ -1,117 +1,113 @@
 -- CreateTable
-CREATE TABLE "Engine" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "tail" TEXT NOT NULL,
-    "model" TEXT NOT NULL
-);
+CREATE TABLE `Engine` (
+    `id` VARCHAR(191) NOT NULL,
+    `tail` VARCHAR(191) NOT NULL,
+    `model` VARCHAR(191) NOT NULL,
+    UNIQUE INDEX `Engine_tail_key`(`tail`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "Run" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "engineId" TEXT NOT NULL,
-    "scenario" TEXT NOT NULL,
-    "seed" INTEGER NOT NULL,
-    "contractVersion" TEXT NOT NULL,
-    "missionProfile" TEXT NOT NULL,
-    "status" TEXT NOT NULL,
-    "startedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "endedAt" DATETIME,
-    CONSTRAINT "Run_engineId_fkey" FOREIGN KEY ("engineId") REFERENCES "Engine" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
-);
+CREATE TABLE `Run` (
+    `id` VARCHAR(191) NOT NULL,
+    `engineId` VARCHAR(191) NOT NULL,
+    `scenario` VARCHAR(191) NOT NULL,
+    `seed` INTEGER NOT NULL,
+    `contractVersion` VARCHAR(191) NOT NULL,
+    `missionProfile` TEXT NOT NULL,
+    `status` VARCHAR(191) NOT NULL,
+    `startedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `endedAt` DATETIME(3) NULL,
+    INDEX `Run_engineId_startedAt_idx`(`engineId`, `startedAt`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "Frame" (
-    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    "runId" TEXT NOT NULL,
-    "t" INTEGER NOT NULL,
-    "ts" DATETIME NOT NULL,
-    "phase" TEXT NOT NULL,
-    "rpm" REAL NOT NULL,
-    "mapKpa" REAL NOT NULL,
-    "egt1" REAL NOT NULL,
-    "egt2" REAL NOT NULL,
-    "egt3" REAL NOT NULL,
-    "egt4" REAL NOT NULL,
-    "cht1" REAL NOT NULL,
-    "cht2" REAL NOT NULL,
-    "cht3" REAL NOT NULL,
-    "cht4" REAL NOT NULL,
-    "oilPressBar" REAL NOT NULL,
-    "oilTempC" REAL NOT NULL,
-    "coolantTempC" REAL NOT NULL,
-    "fuelFlowLph" REAL NOT NULL,
-    "fuelPressBar" REAL NOT NULL,
-    "injTimingDeg" REAL NOT NULL,
-    "vibRmsG" REAL NOT NULL,
-    "busVoltageV" REAL NOT NULL,
-    "altCurrentA" REAL NOT NULL,
-    "context" TEXT NOT NULL,
-    "residualZ" TEXT NOT NULL,
-    "health" TEXT NOT NULL,
-    "ehi" REAL NOT NULL,
-    "faultLabel" TEXT,
-    "confidence" REAL,
-    "rulSec" INTEGER,
-    "pSuccess" REAL,
-    "sensorFaultChannel" TEXT,
-    "sensorFaultMode" TEXT,
-    CONSTRAINT "Frame_runId_fkey" FOREIGN KEY ("runId") REFERENCES "Run" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-);
+CREATE TABLE `Frame` (
+    `id` INTEGER NOT NULL AUTO_INCREMENT,
+    `runId` VARCHAR(191) NOT NULL,
+    `t` INTEGER NOT NULL,
+    `ts` DATETIME(3) NOT NULL,
+    `phase` VARCHAR(191) NOT NULL,
+    `rpm` DOUBLE NOT NULL,
+    `mapKpa` DOUBLE NOT NULL,
+    `egt1` DOUBLE NOT NULL,
+    `egt2` DOUBLE NOT NULL,
+    `egt3` DOUBLE NOT NULL,
+    `egt4` DOUBLE NOT NULL,
+    `cht1` DOUBLE NOT NULL,
+    `cht2` DOUBLE NOT NULL,
+    `cht3` DOUBLE NOT NULL,
+    `cht4` DOUBLE NOT NULL,
+    `oilPressBar` DOUBLE NOT NULL,
+    `oilTempC` DOUBLE NOT NULL,
+    `coolantTempC` DOUBLE NOT NULL,
+    `fuelFlowLph` DOUBLE NOT NULL,
+    `fuelPressBar` DOUBLE NOT NULL,
+    `injTimingDeg` DOUBLE NOT NULL,
+    `vibRmsG` DOUBLE NOT NULL,
+    `busVoltageV` DOUBLE NOT NULL,
+    `altCurrentA` DOUBLE NOT NULL,
+    `context` TEXT NOT NULL,
+    `residualZ` TEXT NOT NULL,
+    `health` TEXT NOT NULL,
+    `ehi` DOUBLE NULL,
+    `faultLabel` VARCHAR(191) NULL,
+    `confidence` DOUBLE NULL,
+    `rulSec` INTEGER NULL,
+    `pSuccess` DOUBLE NULL,
+    `sensorFaultChannel` VARCHAR(191) NULL,
+    `sensorFaultMode` VARCHAR(191) NULL,
+    INDEX `Frame_runId_t_idx`(`runId`, `t`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "Alert" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "runId" TEXT NOT NULL,
-    "t" INTEGER NOT NULL,
-    "code" TEXT NOT NULL,
-    "severity" TEXT NOT NULL,
-    "channel" TEXT NOT NULL,
-    "message" TEXT NOT NULL,
-    "clearedAtT" INTEGER,
-    "ackedAt" DATETIME,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "Alert_runId_fkey" FOREIGN KEY ("runId") REFERENCES "Run" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-);
+CREATE TABLE `Alert` (
+    `id` VARCHAR(191) NOT NULL,
+    `runId` VARCHAR(191) NOT NULL,
+    `t` INTEGER NOT NULL,
+    `code` VARCHAR(191) NOT NULL,
+    `severity` VARCHAR(191) NOT NULL,
+    `channel` VARCHAR(191) NOT NULL,
+    `message` TEXT NOT NULL,
+    `clearedAtT` INTEGER NULL,
+    `ackedAt` DATETIME(3) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX `Alert_runId_t_idx`(`runId`, `t`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "Report" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "runId" TEXT NOT NULL,
-    "kind" TEXT NOT NULL,
-    "contentMd" TEXT NOT NULL,
-    "source" TEXT NOT NULL,
-    "model" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "Report_runId_fkey" FOREIGN KEY ("runId") REFERENCES "Run" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-);
+CREATE TABLE `Report` (
+    `id` VARCHAR(191) NOT NULL,
+    `runId` VARCHAR(191) NOT NULL,
+    `kind` VARCHAR(191) NOT NULL,
+    `contentMd` TEXT NOT NULL,
+    `source` VARCHAR(191) NOT NULL,
+    `model` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX `Report_runId_idx`(`runId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "ChatMessage" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "runId" TEXT NOT NULL,
-    "role" TEXT NOT NULL,
-    "content" TEXT NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "ChatMessage_runId_fkey" FOREIGN KEY ("runId") REFERENCES "Run" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-);
+CREATE TABLE `ChatMessage` (
+    `id` VARCHAR(191) NOT NULL,
+    `runId` VARCHAR(191) NOT NULL,
+    `role` VARCHAR(191) NOT NULL,
+    `content` TEXT NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX `ChatMessage_runId_idx`(`runId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "ModelVersion" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "name" TEXT NOT NULL,
-    "version" TEXT NOT NULL,
-    "metrics" TEXT NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
--- CreateIndex
-CREATE UNIQUE INDEX "Engine_tail_key" ON "Engine"("tail");
-
--- CreateIndex
-CREATE INDEX "Run_engineId_startedAt_idx" ON "Run"("engineId", "startedAt");
-
--- CreateIndex
-CREATE INDEX "Frame_runId_t_idx" ON "Frame"("runId", "t");
-
--- CreateIndex
-CREATE INDEX "Alert_runId_t_idx" ON "Alert"("runId", "t");
+CREATE TABLE `ModelVersion` (
+    `id` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `version` VARCHAR(191) NOT NULL,
+    `metrics` TEXT NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
