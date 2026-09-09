@@ -55,3 +55,8 @@ retribution/ML/data/processed/features_v3_*.npz
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Binaries and local logs
+tools/
+*.log
+
