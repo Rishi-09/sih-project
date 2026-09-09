@@ -496,3 +496,250 @@ code, .mono { font-family: var(--font-mono); }
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ════ Remote Device & Phone Alerting Bar ════ */
+.remote-alerts-container {
+  margin-bottom: 20px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+.remote-alerts-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: linear-gradient(90deg, rgba(84, 198, 209, 0.08) 0%, rgba(21, 29, 34, 0.8) 100%);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.banner-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.banner-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.live-pulse {
+  width: 8px;
+  height: 8px;
+  background: var(--ok);
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(76, 188, 128, 0.7);
+  animation: pulse-ring 2s infinite;
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(76, 188, 128, 0.7); }
+  70% { box-shadow: 0 0 0 8px rgba(76, 188, 128, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(76, 188, 128, 0); }
+}
+
+.banner-title {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.banner-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  color: var(--ink-2);
+}
+
+.badge-ok {
+  background: var(--ok-soft);
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.btn-action {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.btn-action:hover:not(:disabled) {
+  background: var(--accent);
+  color: #0e1418;
+}
+
+.btn-ok {
+  background: var(--ok-soft);
+  border: 1px solid var(--ok);
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.test-alert-notice {
+  padding: 8px 16px;
+  background: var(--surface-2);
+  border-top: 1px solid var(--rule);
+  font-size: 12.5px;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  animation: slide-in 0.2s ease;
+}
+
+.remote-alerts-drawer {
+  padding: 16px;
+  background: var(--paper);
+  border-top: 1px solid var(--rule);
+}
+
+.drawer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.drawer-card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.drawer-card .card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.drawer-card .card-icon {
+  font-size: 16px;
+}
+
+.drawer-card h4 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.drawer-card .card-desc {
+  margin: 0 0 12px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+
+.topic-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.topic-row label {
+  font-size: 12px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.input-topic {
+  flex: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 5px 8px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.input-topic:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.action-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.card-hint {
+  margin-top: auto;
+  font-size: 11px;
+  color: var(--ink-3);
+  line-height: 1.4;
+  border-top: 1px dashed var(--rule);
+  padding-top: 8px;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.perm-status {
+  font-weight: 600;
+  font-size: 11.5px;
+}
+
+.perm-granted { color: var(--ok); }
+.perm-denied { color: var(--critical); }
+.perm-default { color: var(--caution); }
+
+.perm-ok-badge {
+  font-size: 11.5px;
+  color: var(--ok);
+  background: var(--ok-soft);
+  border: 1px solid var(--ok);
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.audio-test-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wakelock-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.wakelock-hint {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.webhook-badge {
+  font-size: 11px;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-top: auto;
+}
+

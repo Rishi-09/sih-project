@@ -6,6 +6,7 @@ import { createSocketGateway } from "./ws/gateway";
 import { createRunsRouter } from "./routes/runs";
 import { reapOrphanedRuns } from "./twin/runManager";
 import { enginesRouter } from "./routes/engines";
+import { notificationsRouter } from "./routes/notifications";
 
 const app = express();
 app.use(cors({ origin: config.corsOrigin }));
@@ -16,6 +17,8 @@ const io = createSocketGateway(httpServer);
 
 app.use("/api/engines", enginesRouter);
 app.use("/api/runs", createRunsRouter(io));
+app.use("/api/notifications", notificationsRouter);
+
 
 app.get("/api/health", (_req, res) => {
   res.json({

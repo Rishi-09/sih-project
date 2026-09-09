@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { EngineSummary } from "@/lib/types";
 import { api } from "@/lib/api";
+import { RemoteAlertsBar } from "@/components/RemoteAlertsBar";
 
 interface Props {
   initialEngines: EngineSummary[];
@@ -117,6 +118,8 @@ export function FleetManager({ initialEngines }: Props) {
           + Add Aircraft
         </button>
       </header>
+
+      <RemoteAlertsBar />
 
       {engines.length === 0 ? (
         <div className="empty-state">

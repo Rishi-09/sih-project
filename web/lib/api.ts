@@ -46,4 +46,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ powerPct }),
     }),
+  getNotificationsConfig: () =>
+    request<{ topic: string; webhookConfigured: boolean; ntfySubscribeUrl: string }>("/api/notifications/config"),
+  updateNotificationsConfig: (data: { topic?: string; webhookUrl?: string }) =>
+    request<{ ok: boolean; topic: string; webhookConfigured: boolean; ntfySubscribeUrl: string }>(
+      "/api/notifications/config",
+      { method: "POST", body: JSON.stringify(data) }
+    ),
+  testNotification: (topic?: string) =>
+    request<{ success: boolean; topic: string; details: any }>("/api/notifications/test", {
+      method: "POST",
+      body: JSON.stringify({ topic }),
+    }),
 };
+

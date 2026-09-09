@@ -11,6 +11,8 @@ import { LimiterList } from "@/components/LimiterList";
 import { WhatIfPlanner } from "@/components/WhatIfPlanner";
 import { DetailTabs } from "@/components/DetailTabs";
 import { ControlBar } from "@/components/ControlBar";
+import { RemoteAlertsBar } from "@/components/RemoteAlertsBar";
+
 
 /**
  * Operator console, organised by DECISION rather than by data source.
@@ -147,6 +149,8 @@ export default function ConsolePage() {
           3D twin
         </Link>
       </header>
+
+      <RemoteAlertsBar />
 
       {!runId ? (
         <>

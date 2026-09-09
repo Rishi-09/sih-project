@@ -4,6 +4,7 @@ import { OpsClient, opsMissionProfile } from "./opsClient";
 import { AlertEngine } from "./alerts";
 import { ReliabilityEngine } from "./reliability";
 import { StartRunRequest, FaultRequest, TickFrame } from "../types";
+import { alertsDispatcher } from "./alertsDispatcher";
 
 type RunStatus = "live" | "degraded" | "stopped";
 type EngineBackend = TwinRun | OpsClient;
@@ -14,6 +15,7 @@ interface RunEntry {
   alertEngine: AlertEngine;
   reliability: ReliabilityEngine;
   status: RunStatus;
+  engineTail?: string;
   frameBuffer: TickFrame[]; // last ~300 frames — chat/report context
   pendingFrames: TickFrame[]; // batched, flushed to SQLite every 5 ticks
   lastFrameT: number | null; // dedup guard for the ops pull path — see stepRun()
@@ -80,6 +82,7 @@ export async function startRun(req: StartRunRequest): Promise<{ runId: string }>
     // code, instead of each computing its own `ehi/100` separately.
     reliability: new ReliabilityEngine(missionProfile),
     status: "live",
+    engineTail: engineRow.tail,
     frameBuffer: [],
     pendingFrames: [],
     lastFrameT: null,
@@ -230,6 +233,16 @@ function finishTick(entry: RunEntry, runId: string, frame: TickFrame): TickFrame
       .create({ data: { runId, t: frame.t, code: a.code, severity: a.severity, channel: a.channel, message: a.message } })
       .catch((e) => console.error("alert persist failed", e));
   }
+
+  // Push critical/warning notifications directly to phone lock screens & remote webhooks
+  if (
+    result.newAlerts.length > 0 ||
+    frame.mission?.recommendation === "land_immediately" ||
+    frame.mission?.recommendation === "return_to_base"
+  ) {
+    alertsDispatcher.dispatchNewAlerts(runId, entry.engineTail ?? "UAV", result.newAlerts, frame);
+  }
+
   for (const code of result.clearedCodes) {
     prisma.alert
       .updateMany({ where: { runId, code, clearedAtT: null }, data: { clearedAtT: frame.t } })
