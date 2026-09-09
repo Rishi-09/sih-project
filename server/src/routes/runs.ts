@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { Server as SocketIOServer } from "socket.io";
 import { prisma } from "../db/client";
-import { startRun, injectFault, clearFaults, stopRun, getFrameBuffer, getReliability, isActive, getStatus, setStatus } from "../twin/runManager";
+import { startRun, injectFault, clearFaults, stopRun, getFrameBuffer, getReliability, isActive, getStatus, setStatus, touchActivity } from "../twin/runManager";
 import { FAULT_CLASS_BY_ID, SENSOR_FAULT_BY_ID } from "../twin/contract";
 import { RunClock } from "../twin/clock";
 import { StartRunRequest, FaultRequest } from "../types";
@@ -89,10 +89,20 @@ export function createRunsRouter(io: SocketIOServer) {
     res.json({ status: "stopped" });
   });
 
+  router.post("/:id/heartbeat", (req, res) => {
+    if (!isActive(req.params.id)) {
+      res.status(404).json({ error: "run not found or not active" });
+      return;
+    }
+    touchActivity(req.params.id);
+    res.json({ ok: true });
+  });
+
   /** Is this run actually live in THIS process? The database's own status
    * cannot answer that — see reapOrphanedRuns. The console polls this while it
    * waits for a first frame so it can tell a slow start from a dead run. */
   router.get("/:id/status", (req, res) => {
+    touchActivity(req.params.id);
     res.json({ active: isActive(req.params.id), status: getStatus(req.params.id) ?? "stopped" });
   });
 

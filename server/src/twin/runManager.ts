@@ -17,6 +17,7 @@ interface RunEntry {
   frameBuffer: TickFrame[]; // last ~300 frames — chat/report context
   pendingFrames: TickFrame[]; // batched, flushed to SQLite every 5 ticks
   lastFrameT: number | null; // dedup guard for the ops pull path — see stepRun()
+  lastActivityAt: number; // timestamp of last interaction or frame activity
 }
 
 const runs = new Map<string, RunEntry>();
@@ -82,6 +83,7 @@ export async function startRun(req: StartRunRequest): Promise<{ runId: string }>
     frameBuffer: [],
     pendingFrames: [],
     lastFrameT: null,
+    lastActivityAt: Date.now(),
   });
   return { runId: dbRun.id };
 }
@@ -108,15 +110,26 @@ export async function reapOrphanedRuns(): Promise<number> {
   return count;
 }
 
+export function touchActivity(runId: string) {
+  const entry = runs.get(runId);
+  if (entry) entry.lastActivityAt = Date.now();
+}
+
+export function getLastActivityAt(runId: string): number | undefined {
+  return runs.get(runId)?.lastActivityAt;
+}
+
 export function injectFault(runId: string, req: FaultRequest) {
   const entry = runs.get(runId);
   if (!entry) throw new Error(`Unknown or inactive runId ${runId}`);
+  entry.lastActivityAt = Date.now();
   entry.engine.injectFault(req);
 }
 
 export function clearFaults(runId: string) {
   const entry = runs.get(runId);
   if (!entry) throw new Error(`Unknown or inactive runId ${runId}`);
+  entry.lastActivityAt = Date.now();
   entry.engine.clearFaults();
 }
 

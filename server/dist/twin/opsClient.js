@@ -82,20 +82,20 @@ const CRUISE_ALT_M = 3000;
 const CRUISE_POWER_PCT = 68;
 const AUTOPILOT_SCHEDULE = [
     { atSimT: 0, input: { throttle: 20, gear: true, autopilot: false } },
-    { atSimT: 8, input: { throttle: 95 } }, // taxi -> takeoff roll
-    { atSimT: 25, input: { throttle: 88, autopilot: true, ap_target_alt: CRUISE_ALT_M, gear: false } }, // climb out
+    { atSimT: 4, input: { throttle: 95 } }, // taxi -> takeoff roll (reduced from 8s to 4s)
+    { atSimT: 15, input: { throttle: 88, autopilot: true, ap_target_alt: CRUISE_ALT_M, gear: false } }, // climb out (reduced from 25s to 15s)
     {
         // Cruise power on level-off, not on the clock. The atSimT floor only stops
         // it firing during the initial ground roll; the altitude predicate is what
         // actually releases it, and the schedule cannot stall because a step is
         // skipped if the aircraft never gets there (see fireDueAutopilotSteps).
-        atSimT: 120,
+        atSimT: 110,
         when: ({ altM }) => altM >= CRUISE_ALT_M * 0.97,
         input: { throttle: CRUISE_POWER_PCT },
     },
-    { atSimT: 1400, input: { ap_target_alt: 150, throttle: 45 } }, // begin descent
-    { atSimT: 1650, input: { throttle: 15, gear: true } }, // approach
-    { atSimT: 1700, input: { throttle: 0, autopilot: false } }, // shutdown
+    { atSimT: 1285, input: { ap_target_alt: 150, throttle: 45 } }, // begin descent (adjusted ~115s earlier)
+    { atSimT: 1450, input: { throttle: 15, gear: true } }, // approach (adjusted ~200s earlier)
+    { atSimT: 1500, input: { throttle: 0, autopilot: false } }, // shutdown (adjusted ~200s earlier, ~25 min total flight)
 ];
 /**
  * The autopilot schedule expressed as a MissionProfile, for the reliability
