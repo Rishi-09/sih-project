@@ -1,0 +1,965 @@
+<title>Retribution: End-to-End Engine Monitoring Architecture</title>
+<style>
+  :root {
+    --bg: #f5f5f5;
+    --text: #222;
+    --border: #ddd;
+    --accent: #0066cc;
+    --good: #2ecc71;
+    --warn: #f39c12;
+    --danger: #e74c3c;
+    --section-bg: #f9f9f9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a1a;
+      --text: #e0e0e0;
+      --border: #444;
+      --accent: #4da6ff;
+      --good: #27ae60;
+      --warn: #e67e22;
+      --danger: #c0392b;
+      --section-bg: #252525;
+    }
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  h1 { border-bottom: 4px solid var(--accent); padding-bottom: 15px; margin-top: 0; }
+  h2 { color: var(--accent); margin-top: 40px; border-bottom: 2px solid var(--border); padding-bottom: 8px; }
+  h3 { color: var(--text); margin-top: 25px; }
+  h4 { color: var(--text); margin-top: 15px; font-size: 1.05em; }
+
+  .section {
+    background: var(--section-bg);
+    border-left: 5px solid var(--accent);
+    padding: 20px;
+    margin: 20px 0;
+    border-radius: 4px;
+  }
+
+  .diagram {
+    background: rgba(0,0,0,0.05);
+    border: 1px solid var(--border);
+    padding: 20px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+    overflow-x: auto;
+    margin: 15px 0;
+    border-radius: 4px;
+  }
+
+  .sensor-card {
+    background: var(--section-bg);
+    border-left: 4px solid var(--warn);
+    padding: 15px;
+    margin: 12px 0;
+    border-radius: 3px;
+  }
+
+  .sensor-card.critical {
+    border-left-color: var(--danger);
+  }
+
+  .sensor-card.context {
+    border-left-color: var(--accent);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 12px;
+    text-align: left;
+  }
+  th {
+    background: rgba(0,0,0,0.1);
+    font-weight: 600;
+  }
+
+  code {
+    background: rgba(0,0,0,0.08);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Monaco', monospace;
+  }
+
+  pre {
+    background: rgba(0,0,0,0.1);
+    border-left: 3px solid var(--accent);
+    padding: 15px;
+    overflow-x: auto;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+  }
+
+  .flow-box {
+    background: var(--accent);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-align: center;
+    min-width: 120px;
+  }
+
+  .flow-arrow {
+    font-size: 1.5em;
+    color: var(--accent);
+  }
+
+  .highlight {
+    background: rgba(255, 193, 7, 0.2);
+    padding: 2px 4px;
+    border-radius: 3px;
+  }
+
+  .definition {
+    background: rgba(77, 166, 255, 0.1);
+    border-left: 4px solid var(--accent);
+    padding: 12px;
+    margin: 10px 0;
+    border-radius: 3px;
+  }
+
+  ul.check {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  ul.check li:before {
+    content: "✓ ";
+    color: var(--good);
+    font-weight: bold;
+    margin-right: 8px;
+  }
+</style>
+
+<h1>🚁 Retribution: End-to-End Engine Monitoring Architecture</h1>
+
+<div class="section">
+  <h3>What Is This Project?</h3>
+  <p><strong>Retribution</strong> is a <span class="highlight">real-time digital health monitoring system for small aircraft piston engines</span>, specifically the <strong>Rotax 915 iS</strong> engine found in many MALE (Medium Altitude Long Endurance) unmanned aircraft and light aircraft.</p>
+
+  <p><strong>The core mission:</strong> While an engine is running in flight, continuously measure 19 different physical parameters, feed them into machine-learning models, trend them over time, and answer one question: <span class="highlight">"Will this engine complete its mission safely, or should the pilot reduce power / return to base?"</span></p>
+
+  <p><strong>Why it matters:</strong> Unlike a car engine that fails gradually over months, an aircraft engine can degrade silently in minutes (bearing wear, fuel system issues, cooling problems). By the time the pilot sees an old dashboard light, it might be too late. Retribution catches degradation EARLY by looking at trends, not just instantaneous readings.</p>
+</div>
+
+---
+
+<h2>🔧 The Rotax 915 iS: What You're Monitoring</h2>
+
+<h3>Overview: A Modern Piston Engine</h3>
+<p>The Rotax 915 iS is a <strong>4-cylinder, 4-stroke, turbocharged aircraft engine</strong> producing ~141 horsepower. It's fuel-injected, air-cooled, and has active turbo management — a sophisticated piece of aviation hardware.</p>
+
+<div class="diagram">
+AIR IN → [Turbocharger] → [Intake Valves] → [Cylinder] → [Exhaust Valves]
+                              ↓
+                    [Fuel Injector] (timed, precise)
+                              ↓
+                    [Piston] (moves up-down)
+                              ↓
+                    [Crankshaft] (converts linear → rotational)
+                              ↓
+                    [Engine Block] → HEAT (must be cooled!)
+                              ↓
+                    [Oil System] (lubricates, cools, carries wear particles)
+</div>
+
+<h3>The Four-Stroke Cycle (Repeating ~2000-3000x per second at cruise)</h3>
+<table>
+  <tr>
+    <th>Stroke</th>
+    <th>What Happens</th>
+    <th>Sensor Implications</th>
+  </tr>
+  <tr>
+    <td><strong>1. Intake</strong></td>
+    <td>Piston moves down, inlet valve opens, air+fuel mix enters cylinder</td>
+    <td>MAP (manifold pressure) drops; fuel flow increases</td>
+  </tr>
+  <tr>
+    <td><strong>2. Compression</strong></td>
+    <td>Inlet closes, piston moves up, mixture gets squeezed → temperature rises</td>
+    <td>Cylinder pressure soars; EGT (exhaust temp) prep begins</td>
+  </tr>
+  <tr>
+    <td><strong>3. Power (Combustion)</strong></td>
+    <td>Spark plug fires, fuel ignites, massive pressure pushes piston down (POWER!)</td>
+    <td>EGT PEAKS; vibration spikes; cylinder head temp peaks</td>
+  </tr>
+  <tr>
+    <td><strong>4. Exhaust</strong></td>
+    <td>Outlet valve opens, piston moves up, burnt gases expelled at very high temp</td>
+    <td>EGT still high; oil temp rises from carried heat</td>
+  </tr>
+</table>
+
+<h3>Key Systems Inside the Engine</h3>
+
+<h4>🌡️ Cooling System (Air-Cooled)</h4>
+<p>Unlike car engines with water jackets, the Rotax 915 is <strong>air-cooled</strong> — fins on the engine block dissipate heat directly to the airstream flowing over the fuselage. This is why:</p>
+<ul>
+  <li>CHT (Cylinder Head Temp) is THE critical parameter — no coolant buffer</li>
+  <li>Cooling depends entirely on airspeed and power setting</li>
+  <li>Idle at sea level can overheat; climb at altitude can cool too much</li>
+</ul>
+
+<h4>🛢️ Oil System (Lubrication + Cooling)</h4>
+<p>Oil serves THREE jobs in an aircraft engine:</p>
+<ol>
+  <li><strong>Lubricant:</strong> Reduces friction between moving parts (crankshaft, bearings, pistons)</li>
+  <li><strong>Coolant:</strong> Carries away heat from the combustion chambers to the oil cooler</li>
+  <li><strong>Messenger:</strong> Suspended wear particles (iron, copper, aluminum) tell you about internal wear</li>
+</ol>
+<p>Oil pressure must stay between 1.5 bar (idle) and ~4.7 bar (cruise) — too low = bearing starvation; too high = excessive friction and heat.</p>
+
+<h4>⛽ Fuel System</h3>
+<p>The Rotax 915 iS runs on <strong>Avgas 100LL (low-lead)</strong>, injected via 4 fuel injectors with precise ECU timing. Proper fuel flow and pressure are critical:</p>
+<ul>
+  <li>Too lean (not enough fuel) → CHT spikes, engine leans out, power loss</li>
+  <li>Too rich (excess fuel) → poor combustion, soot, carbon buildup</li>
+  <li>Fuel pressure loss → immediate power loss and potential flame-out</li>
+</ul>
+
+<h4>⚙️ Turbocharger (Boost)</h4>
+<p>A small turbine driven by exhaust gases compresses intake air, allowing the engine to maintain power at altitude. This is why:</p>
+<ul>
+  <li>MAP (manifold pressure) varies with altitude and throttle independently</li>
+  <li>Turbo lag exists — exhaust pressure builds slowly when you add throttle</li>
+  <li>Turbo failure = sudden power loss (the most dangerous engine failure mode)</li>
+</ul>
+
+---
+
+<h2>📊 The Sensor Suite: What We Measure (19 Channels)</h2>
+
+<p><strong>The airplane transmits 19 real-time measurements every 50 milliseconds (20 Hz).</strong> Each one tells a story about the engine's health. They fall into two categories:</p>
+
+<h3>🔴 Critical Engine Sensors (The Health Indicators)</h3>
+
+<div class="sensor-card critical">
+  <h4>CHT (Cylinder Head Temperature)</h4>
+  <p><strong>What it measures:</strong> Temperature of the cylinder head (the hottest part of the engine)</p>
+  <p><strong>Typical range:</strong> 65°C at idle → 150°C at high power (Rotax limit: 160°C redline)</p>
+  <p><strong>Why it matters:</strong> Exceeding redline for even 30 seconds can melt pistons. Too low = engine not running efficiently.</p>
+  <p><strong>What causes it to rise:</strong></p>
+  <ul style="margin: 5px 0;">
+    <li>High power setting (more fuel burning = more heat)</li>
+    <li>Poor cooling (low airspeed, high ambient temp, clogged cooler)</li>
+    <li>Over-leaning (running too dry on fuel)</li>
+    <li>Cooling system failure (radiator blockage)</li>
+  </ul>
+  <p><strong>Retribution watches for:</strong> Steady climb in CHT despite stable power → sign of cooling degradation</p>
+</div>
+
+<div class="sensor-card critical">
+  <h4>OIL_TEMP (Oil Temperature)</h4>
+  <p><strong>What it measures:</strong> Temperature of the engine oil</p>
+  <p><strong>Typical range:</strong> 40°C at idle → 90°C at cruise (Rotax limit: 110°C)</p>
+  <p><strong>Why it matters:</strong> Oil viscosity (thickness) depends on temp. Too cold = excessive drag; too hot = breakdown and bearing wear.</p>
+  <p><strong>What causes it to rise:</strong></p>
+  <ul style="margin: 5px 0;">
+    <li>High power + sustained operation</li>
+    <li>Oil cooler failure or blockage</li>
+    <li>Bearing friction (internal wear generates heat)</li>
+  </ul>
+  <p><strong>Retribution watches for:</strong> OIL_TEMP rising while power is steady → bearing wear or cooler problem</p>
+</div>
+
+<div class="sensor-card critical">
+  <h4>OIL_PRESS (Oil Pressure)</h4>
+  <p><strong>What it measures:</strong> Pump pressure of the oil (force pushing it through galleries)</p>
+  <p><strong>Typical range:</strong> 0.8 bar at idle → 4.7 bar at 88% power (Rotax limit low: 1.5 bar, high: 4.5 bar)</p>
+  <p><strong>Why it matters:</strong> Pressure tells you if oil is flowing. No pressure = no lubrication = catastrophic bearing failure in seconds.</p>
+  <p><strong>What causes it to drop:</strong></p>
+  <ul style="margin: 5px 0;">
+    <li>Low oil level (pump can't push what isn't there)</li>
+    <li>Oil viscosity too thin (from overheating)</li>
+    <li>Pump failure or blockage</li>
+    <li>Bearing wear (oil leaking past enlarged clearances)</li>
+  </ul>
+  <p><strong>Retribution watches for:</strong> OIL_PRESS drops unexpectedly at high power → immediate danger signal</p>
+</div>
+
+<div class="sensor-card critical">
+  <h4>EGT (Exhaust Gas Temperature) [4 sensors — one per cylinder]</h4>
+  <p><strong>What it measures:</strong> Temperature of exhaust gases leaving each cylinder (per-cylinder individual temp)</p>
+  <p><strong>Typical range:</strong> 400°C at idle → 750°C at high power (Rotax limit: 843°C peak)</p>
+  <p><strong>Why it matters:</strong> EGT tells you fuel mixture quality per cylinder. Uneven EGTs = fuel flow imbalance = uneven wear.</p>
+  <p><strong>What the pattern tells you:</strong></p>
+  <ul style="margin: 5px 0;">
+    <li><strong>EGT1 much hotter than others:</strong> Cylinder 1 leaning out or running hot</li>
+    <li><strong>Wide spread (EGT1 far from EGT4):</strong> Fuel injector clogging or airflow imbalance</li>
+    <li><strong>All climbing together at constant power:</strong> Normal (throttle linkage moves them together)</li>
+  </ul>
+  <p><strong>Retribution watches for:</strong> Individual EGT spreading or one climbing while others flat → injector or cooling problem</p>
+</div>
+
+<div class="sensor-card critical">
+  <h4>RPM (Revolutions Per Minute)</h4>
+  <p><strong>What it measures:</strong> How fast the crankshaft is spinning (engine speed)</p>
+  <p><strong>Typical range:</strong> 0 rpm (off) → 5500 rpm (max)</p>
+  <p><strong>Why it matters:</strong> RPM is the "clock" of the engine. Everything scales with it: power, heat, wear rate.</p>
+  <p><strong>What causes unexpected RPM changes:</strong></p>
+  <ul style="margin: 5px 0;">
+    <li>Propeller governor changing pitch (altitude changes)</li>
+    <li>Throttle input (pilot control)</li>
+    <li>Ignition failure or misfire (drops unexpectedly)</li>
+  </ul>
+  <p><strong>Retribution watches for:</strong> RPM dropping when power should be constant → ignition or fuel delivery problem</p>
+</div>
+
+<div class="sensor-card critical">
+  <h4>MAP (Manifold Absolute Pressure)</h4>
+  <p><strong>What it measures:</strong> Air pressure in the intake manifold (how much air is being fed to cylinders)</p>
+  <p><strong>Typical range:</strong> 40 kPa at sea level idle → 100+ kPa at high altitude / full power</p>
+  <p><strong>Why it matters:</strong> MAP tells you how much fuel to inject (fuel injectors scale with MAP). It's the "load" sensor.</p>
+  <p><strong>What affects MAP:</strong></p>
+  <ul style="margin: 5px 0;">
+    <li>Throttle position (you control intake valve opening)</li>
+    <li>Altitude (less air density = lower MAP at same throttle)</li>
+    <li>Turbocharger boost (intercooler, wastegate tuning)</li>
+  </ul>
+  <p><strong>Retribution watches for:</strong> MAP not responding to throttle input → throttle linkage or turbo problem</p>
+</div>
+
+<h3>🔵 Context Sensors (Conditions Around the Engine)</h3>
+
+<div class="sensor-card context">
+  <h4>OAT (Outside Air Temperature)</h4>
+  <p><strong>What it measures:</strong> Ambient air temperature</p>
+  <p><strong>Typical range:</strong> -50°C at altitude → +40°C on hot days</p>
+  <p><strong>Why it matters:</strong> Affects air density, fuel vaporization, cooling effectiveness. A 20°C difference changes CHT by 5-10°C.</p>
+</div>
+
+<div class="sensor-card context">
+  <h4>ALT_M (Altitude in Meters)</h4>
+  <p><strong>What it measures:</strong> Height above sea level (from barometric pressure)</p>
+  <p><strong>Typical range:</strong> 0m (sea level) → 5000m (test altitude for this system)</p>
+  <p><strong>Why it matters:</strong> Air density decreases with altitude → lower power available, lower cooling effectiveness, different engine behavior.</p>
+</div>
+
+<div class="sensor-card context">
+  <h4>IAS_KT (Indicated Airspeed in Knots)</h4>
+  <p><strong>What it measures:</strong> Speed of aircraft through the air</p>
+  <p><strong>Typical range:</strong> 40 kt (taxi) → 100+ kt (cruise)</p>
+  <p><strong>Why it matters:</strong> Airspeed determines cooling (more airflow = better cooling). At idle on the ground, CHT will climb. In the air, high airspeed keeps it down.</p>
+</div>
+
+<div class="sensor-card context">
+  <h4>THROTTLE_PCT (Throttle Position / Power Setting)</h4>
+  <p><strong>What it measures:</strong> Pilot throttle input as a percentage (0-100%)</p>
+  <p><strong>Typical range:</strong> 0% (idle/shutdown) → 100% (full power)</p>
+  <p><strong>Why it matters:</strong> THE most important input variable. Everything else scales with this: EGT, CHT, oil temp, power output.</p>
+</div>
+
+---
+
+<h2>🧠 How Retribution Understands the Engine (The ML Layer)</h2>
+
+<h3>The Machine Learning Model: What It Learned</h3>
+<p>During training, Retribution's ML model flew the engine thousands of times in a simulator called <strong>OpsEngineSim</strong> — a high-fidelity physics model that mimics the real Rotax 915. It learned:</p>
+
+<div class="definition">
+  <strong>"At this power, altitude, and OAT, what should CHT / OIL_PRESS / EGT / etc. be on a healthy engine?"</strong>
+</div>
+
+<p>It learned patterns like:</p>
+<ul class="check">
+  <li>At 70% throttle at 3000m, CHT should be 130–135°C (± 5°C for normal sensor noise)</li>
+  <li>Oil pressure should rise ~0.05 bar per 1% throttle increase</li>
+  <li>EGT1 and EGT2 should track together within 5°C</li>
+  <li>When throttle drops, CHT should fall within 10 seconds (if cooling system is working)</li>
+</ul>
+
+<h3>Residuals: The "Difference from Normal"</h3>
+<p>The ML model compares each measurement against what it expects:</p>
+
+<div class="diagram">
+MEASURED CHT: 135°C
+EXPECTED CHT (from model):  130°C
+RESIDUAL = 135 - 130 = +5°C (slight overheat, but within noise)
+
+MEASURED CHT: 145°C
+EXPECTED CHT: 130°C
+RESIDUAL = +15°C (unusual! something is degrading)</div>
+
+<p><strong>Key insight:</strong> Residuals are <strong>anomaly scores</strong>. A huge residual (e.g., +25°C) when conditions say it should be normal = sign of degradation.</p>
+
+<h3>The 91-Class Fault Taxonomy</h3>
+<p>The ML model can classify 91 different fault patterns — things like:</p>
+
+<table>
+  <tr>
+    <th>Fault Class</th>
+    <th>What It Means</th>
+    <th>Signature Pattern</th>
+  </tr>
+  <tr>
+    <td>cooling_failure</td>
+    <td>Radiator clogged or airflow blocked</td>
+    <td>CHT climbs despite low-mid power; OIL_TEMP rises</td>
+  </tr>
+  <tr>
+    <td>lubrication_degradation</td>
+    <td>Oil viscosity breaking down (overheated)</td>
+    <td>OIL_TEMP high, OIL_PRESS starts dropping</td>
+  </tr>
+  <tr>
+    <td>bearing_wear</td>
+    <td>Crankshaft/connecting rod bearings worn</td>
+    <td>OIL_PRESS gradually drops; vibration increases</td>
+  </tr>
+  <tr>
+    <td>fuel_system_fault</td>
+    <td>Fuel pump, filter, or injector problem</td>
+    <td>RPM unstable, EGT spreads across cylinders</td>
+  </tr>
+  <tr>
+    <td>ignition_degradation</td>
+    <td>Spark plug fouling or timing drift</td>
+    <td>RPM drops unexpectedly, EGT uneven per cylinder</td>
+  </tr>
+  <tr>
+    <td>sensor_drift_oilpress</td>
+    <td>Oil pressure sensor reading wrong</td>
+    <td>OIL_PRESS change doesn't match power change</td>
+  </tr>
+  <tr>
+    <td>healthy</td>
+    <td>Engine is normal</td>
+    <td>All residuals small and random (noise-like)</td>
+  </tr>
+</table>
+
+<p>When you see 3+ residuals simultaneously anomalous (all pointing the same direction), the model identifies the most likely fault class.</p>
+
+---
+
+<h2>❤️ EHI (Engine Health Index): How Retribution Grades the Engine</h2>
+
+<h3>The Question EHI Answers</h3>
+<div class="definition">
+  <strong>"On a scale of 0–100, how close is this engine to a known failure mode RIGHT NOW?"</strong>
+</div>
+
+<p><strong>EHI = 100:</strong> Perfectly healthy, all residuals tiny and normal
+<strong>EHI = 80:</strong> Some channels showing minor degradation, but nowhere near limits
+<strong>EHI = 50:</strong> Multiple systems degrading, urgent power reduction recommended
+<strong>EHI &lt; 30:</strong> Engine is degrading rapidly, land immediately</p>
+
+<h3>How EHI Is Calculated (Simplified)</h3>
+<pre>
+1. Calculate per-channel anomaly score (how far from expected):
+   CHT anomaly = |measured_CHT - expected_CHT| / normal_noise_level
+   OIL_PRESS anomaly = similar calculation
+   ... repeat for all 19 channels
+
+2. Aggregate into subsystem scores:
+   COOLING subsystem = worst of (CHT, OIL_TEMP)
+   LUBRICATION subsystem = worst of (OIL_PRESS, OIL_TEMP)
+   FUEL subsystem = worst of (all EGT anomalies, fuel pressure)
+   IGNITION subsystem = worst of (RPM stability, EGT anomalies)
+
+3. Calculate overall EHI:
+   Base health = (1 - max_anomaly_zscore/threshold) × 100
+   Add penalty if ANY subsystem is degraded
+   Add penalty if trends are worsening (getting worse over time)
+
+   EHI = clamp(result, 0, 100)
+</pre>
+
+<p><strong>Key concept:</strong> EHI is <strong>not just the worst number</strong> — it's a holistic view. An engine at 126°C CHT against a 125°C caution, with everything else perfect, scores differently than one where CHT, OIL_TEMP, and OIL_PRESS are all marginal.</p>
+
+---
+
+<h2>📈 Mission Reliability: The Core Innovation</h2>
+
+<h3>The Old Question vs. The New Question</h3>
+<div class="definition">
+  <strong>OLD (EHI-based):</strong> "How healthy is the engine RIGHT NOW?" (a snapshot)
+  <strong>NEW (Mission Reliability):</strong> "Will this engine complete its remaining flight safely?" (a forecast)
+</div>
+
+<h3>How Mission Reliability Works (Conceptually)</h3>
+
+<p><strong>Step 1: Measure Trends</strong></p>
+<p>Over the last 3 minutes, how is each channel changing (per second) at constant power?</p>
+<pre>
+CHT trend: +0.2°C/min (slowly climbing despite same throttle) = sign of degradation
+OIL_PRESS trend: flat = healthy
+RPM trend: flat = healthy
+</pre>
+
+<p><strong>Step 2: Account for Power Changes</strong></p>
+<p>When you increase throttle 10%, CHT naturally rises ~20°C just from burning more fuel. The system separates this from degradation:</p>
+<pre>
+Measured CHT rise: +25°C
+Expected from power change: +20°C
+Unexplained rise (degradation): +5°C ← THIS is what we trend
+</pre>
+
+<p><strong>Step 3: Thermal Lag Correction</strong></p>
+<p>Oil and coolant don't respond instantly to power changes. They have a ~25–45 second lag. The system accounts for this:</p>
+<pre>
+Power was increased 5 seconds ago → CHT will still be climbing naturally
+Don't score this as degradation yet; wait for the thermal lag to settle
+</pre>
+
+<p><strong>Step 4: Project Into the Mission</strong></p>
+<p>The system knows the planned mission profile (taxi 2 min, takeoff 2 min, climb 4 min, cruise 15 min, descent 5 min). It asks:</p>
+
+<div class="definition">
+  <strong>"At the current degradation rate, will any channel cross its REDLINE before mission end?"</strong>
+</div>
+
+<p>It calculates this analytically (algebra, not simulation) for closed-form certainty:</p>
+<pre>
+CHT trend: +0.2°C/min
+CHT now: 135°C
+CHT redline: 160°C
+Time to redline: (160 - 135) / 0.2 = 125 minutes
+Mission time left: 30 minutes
+Probability of crossing: 1 - 30/125 = 76% SAFE (not crossing)
+</pre>
+
+<p><strong>Step 5: Add Standing Risk</strong></p>
+<p>Even if a channel never crosses its redline, living in the caution band for too long is risky (limits exist for a reason):</p>
+<pre>
+OIL_TEMP now: 105°C
+OIL_TEMP caution band: 95–110°C (already in caution!)
+Time in band: 10 minutes
+Caution halflife: 30 minutes (30 min at top of band = 50% risk)
+Current sustained-operation risk: ~20%
+</pre>
+
+<p><strong>Step 6: Aggregate (Monte Carlo)</strong></p>
+<p>Run 400 simulated missions, randomly varying each channel's trend (within measurement uncertainty). Count how many complete safely:</p>
+<pre>
+Trial 1: CHT crosses at 25 min, cooling_failure scenario ✗ FAILED
+Trial 2: All channels OK all mission ✓ PASSED
+Trial 3: OIL_PRESS low at 40 min ✗ FAILED
+...
+Trial 400: All channels OK ✓ PASSED
+
+Result: 340/400 trials passed = P(success) = 85%
+</pre>
+
+<h3>The Recommendation Ladder (Based on P(success))</h3>
+
+<table>
+  <tr>
+    <th>P(Success)</th>
+    <th>Recommendation</th>
+    <th>Action</th>
+  </tr>
+  <tr>
+    <td style="color: var(--good); font-weight: bold;">≥ 96%</td>
+    <td>✅ CONTINUE</td>
+    <td>No action. Engine is healthy. Continue normal ops.</td>
+  </tr>
+  <tr>
+    <td style="color: var(--warn); font-weight: bold;">88–96%</td>
+    <td>⚠️ DERATE (reduce power)</td>
+    <td>System calculates lowest safe power. E.g., "Reduce to 80% throttle" extends mission completion to 95%.</td>
+  </tr>
+  <tr>
+    <td style="color: var(--danger); font-weight: bold;">65–88%</td>
+    <td>🔴 RETURN TO BASE</td>
+    <td>Degradation is significant. Mission should be aborted. High risk of in-flight emergency if continued.</td>
+  </tr>
+  <tr>
+    <td style="color: var(--danger); font-weight: bold;">< 65%</td>
+    <td>⛔ LAND IMMEDIATELY</td>
+    <td>Critical. Likely failure within mission time. Unsafe to continue.</td>
+  </tr>
+</table>
+
+---
+
+<h2>🔄 End-to-End Workflow: From Startup to Safe Landing</h2>
+
+<div class="flow">
+  <div class="flow-box">⏰ T=0s<br>PREFLIGHT</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box">⏰ T=30s<br>STARTUP</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box">⏰ T=2min<br>TAXI</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-box">⏰ T=4min<br>TAKEOFF</div>
+</div>
+
+<h3>🟩 PREFLIGHT (Ground, engine off)</h3>
+<pre>
+Pilot opens Retribution console
+→ System loads all sensor baseline limits (CHT_MAX, OIL_PRESS_MIN, etc.)
+→ System loads the mission profile (where the flight will go)
+→ All sensors show 0 or ambient values
+→ EHI shows "—" (not assessed) because engine isn't running
+→ Recommendation: "ASSESSING" (waiting for engine start)
+</pre>
+
+<h3>🟨 STARTUP (Engine starting, ~T=0–30s)</h3>
+<pre>
+Pilot cranks the engine
+→ Fuel pump comes on → MAP starts rising
+→ Spark plugs fire → RPM rises from 0 to 1000 rpm
+→ EGT1–4 jump to ~400°C as combustion begins
+→ CHT begins rising (engine warming from -20°C or ambient)
+→ OIL_PRESS rises slowly (oil is cold, viscous)
+
+System response:
+- Detects we're in "startup" phase (ML model knows this is not assessment time)
+- Publishes health = "—" (not assessed)
+- Publishes diagnosis = "ASSESSING" (we're in a transient phase, trends don't apply)
+- Displays on console: "Starting up..." (yellow state)
+
+Why? The ML model was trained on running engines, not cold startups.
+Residuals are huge and meaningless. Honest to say "I don't know yet."
+</pre>
+
+<h3>🟨 TAXI (Ground, engine running, T=30s–2min)</h3>
+<pre>
+Pilot advances throttle to ~20% for taxi
+→ RPM settles to ~1200 rpm
+→ MAP rises to ~50 kPa
+→ CHT still climbing (engine not yet at operating temp)
+→ EGT stabilizes around 500–550°C per cylinder
+→ OIL_PRESS ~1.5 bar
+
+System response:
+- Still in "taxi" phase (unstable, thermal transient)
+- Health and diagnosis still "ASSESSING" (not ready to publish)
+- Collecting data for the trend window
+
+Still not assessment time because:
+- Engine is warming up (thermocouples trailing temperature)
+- Airspeed is low (poor cooling)
+- Power is low (unrepresentative of normal ops)
+</pre>
+
+<h3>🟩 TAKEOFF (Low altitude, high power, T=2–5min)</h3>
+<pre>
+Pilot advances throttle to 95%
+→ RPM jumps to 4500 rpm
+→ MAP rises to 95 kPa
+→ CHT shoots up to 140–150°C (combustion + climb power)
+→ EGT peaks at 700°C per cylinder
+→ OIL_PRESS rises to 3.8 bar
+→ Airspeed climbing from 40 kt to 60+ kt
+
+System response:
+- Transient phase (throttle changing rapidly, slopes not stable)
+- Still says "ASSESSING"
+- Rolling-trend window still filling (needs 45+ seconds of stable data)
+- Status: Yellow, "Climbing to altitude..."
+</pre>
+
+<h3>🟦 CLIMB (Altitude 1000–3000m, T=5–10min)</h3>
+<pre>
+Pilot maintains 88% throttle, airspeed 70 kt
+→ RPM settles to 4200 rpm
+→ MAP steady at 85 kPa (altitude effect)
+→ CHT steady at 135°C
+→ EGT steady at 650°C per cylinder
+→ OIL_PRESS steady at 3.5 bar
+→ Altitude rising steadily
+
+System response:
+- NOW we're in a stable phase (throttle not changing, power constant)
+- 180-second rolling window is full of stable data
+- Trends are now measurable:
+  - CHT trend: +0.05°C/min (normal thermal lag from startup)
+  - OIL_PRESS trend: flat (good)
+  - EGT trend: flat (good)
+
+EHI Calculation:
+- All residuals tiny (each sensor near predicted value)
+- All subsystems healthy
+- EHI = 98/100 ✓
+
+P(success) Calculation:
+- At 88% throttle, if trends continue, when does anything breach?
+- CHT: trending +0.05°C/min, will reach 160°C redline in (160-135)/0.05 = 500 minutes
+- Mission has 20 minutes left
+- P(CHT breach) = 0% (nowhere near)
+- Similar for other channels
+- Result: P(success) = 99% ✓
+
+Recommendation:
+→ P(success) ≥ 96%
+→ Display: "✅ CONTINUE NORMAL OPERATIONS"
+→ Console shows: EHI 98, GREEN light, "All systems nominal"
+</pre>
+
+<h3>🟦 CRUISE (Altitude 3000m, T=10–25min)</h3>
+<pre>
+Pilot reduces power to 68% (cruise setting)
+→ RPM drops to 3800 rpm
+→ MAP drops to 68 kPa
+→ CHT drops to 125°C (less combustion heat, more cooling airflow)
+→ EGT drops to 600°C
+→ OIL_PRESS drops to 2.8 bar
+→ Airspeed stabilizes at 90 kt
+
+System response:
+- Throttle just changed (transient)
+- Trends temporarily suppressed (we don't trust them during power changes)
+- EHI stays at 98, but basis changes to "standing_margin_transient" (we're trusting position, not slope)
+- Recommendation stays GREEN, but confidence may dip slightly while new trends stabilize
+
+After 30 more seconds of stable cruise:
+- New trends emerge
+- CHT trend: flat (good, system has adapted)
+- P(success) recalculated: still 99%+
+- Display: "✅ CONTINUE"
+</pre>
+
+<h3>🟩 Scenario: DEGRADATION DETECTED (Hypothetical)</h3>
+<p><strong>What if at T=15 min, CHT starts climbing despite throttle staying constant?</strong></p>
+
+<pre>
+T=15:00 → CHT = 125°C, stable
+T=15:30 → CHT = 127°C (still OK)
+T=16:00 → CHT = 129°C (trend emerging)
+T=16:30 → CHT = 132°C (trend confirmed: +0.4°C/min!)
+
+System detects:
+- Throttle: unchanged at 68%
+- Expected CHT: should be 125°C
+- Measured CHT: 132°C
+- Unexplained rise: +7°C
+- Residual: +7°C / 5°C_noise = Z-score 1.4 (anomalous!)
+
+Trend analysis:
+- CHT climbing +0.4°C/min = 10× faster than normal +0.05°C/min
+- All other channels normal (OIL_PRESS flat, EGT flat)
+- Likely cause: COOLING_FAILURE (radiator clogged or blocked)
+
+EHI recalculation:
+- Cooling subsystem degrades (anomaly detected)
+- EHI drops from 98 → 75 (still safe, but degraded)
+- Basis: "cooling_failure_suspected"
+
+P(success) recalculation:
+- CHT at 132°C, climbing +0.4°C/min
+- Time to 160°C redline: (160-132)/0.4 = 70 minutes
+- Mission time remaining: 10 minutes
+- P(breach) during mission: ~0% (still plenty of margin)
+- BUT: sustained climb means it WILL breach if not addressed
+- P(success): 92% (drops from 99%, due to standing caution risk)
+
+Recommendation:
+→ P(success) = 92% (between 88% and 96%, so DERATE zone)
+→ Display: "⚠️ DERATE RECOMMENDED"
+→ Console calculates: "Reduce power to 60% for 96% P(success)"
+
+Pilot action:
+→ Pilot moves throttle to 60%
+→ MAP drops to 50 kPa
+→ CHT starts dropping within 10 seconds (thermal lag)
+→ T=16:45 → CHT = 130°C
+→ T=17:15 → CHT = 127°C
+→ T=18:00 → CHT stabilizes at 122°C (new equilibrium at lower power)
+
+System response:
+→ CHT trend now: flat (or very slight decline)
+→ New EHI: 82 (degraded, but stable)
+→ New P(success): 96% ✓ (back in GREEN)
+→ Recommendation: "✅ CONTINUE AT 60% POWER"
+
+Mission continuation:
+→ Flight continues for remaining 10 minutes at 60% power
+→ All channels stable
+→ Landing approach: all systems nominal
+→ Safe recovery on ground
+</pre>
+
+<h3>🟨 DESCENT (T=25–30min)</h3>
+<pre>
+Pilot reduces power to 45% for descent
+→ RPM drops to 3000 rpm
+→ CHT drops to 110°C
+→ EGT drops to 550°C
+→ OIL_PRESS drops to 1.8 bar (low, but still above 1.5 bar minimum)
+
+System response:
+- Transient phase (power change)
+- Trends temporarily suppressed
+- EHI: 98 (engine still healthy after the cooling hiccup)
+</pre>
+
+<h3>🟥 APPROACH (T=30–32min)</h3>
+<pre>
+Pilot reduces power to 15% for approach
+→ RPM drops to 1800 rpm
+→ CHT drops to 95°C
+→ EGT drops to 480°C
+→ OIL_PRESS drops to 1.2 bar (approaching minimum, but OK on approach)
+
+System response:
+- Low-side limits suppressed below 30% power (approach/landing is special)
+- No warning issued (known behavior)
+</pre>
+
+<h3>🟧 LANDING (T=32–33min)</h3>
+<pre>
+Pilot reduces power to 0% (shutdown)
+→ All values drop to idle
+→ Engine coasts down over ~10 seconds
+→ Console: "Mission complete. Safe landing."
+</pre>
+
+<h3>📊 SUMMARY & LOGGING</h3>
+<pre>
+Post-flight data summary:
+- Flight time: 33 minutes
+- Max EHI: 98 (healthy throughout)
+- Max CHT: 135°C (normal)
+- Min OIL_PRESS: 1.2 bar (OK)
+- Anomalies detected: None
+- Faults detected: None
+- Recommendation history: GREEN → GREEN → GREEN → DERATE (1 event) → GREEN
+- Maintenance note: None required
+
+Database entry:
+- Run ID: ABC123
+- Engine ID: Rotax_915_iS_v2.1
+- Timestamp: 2026-09-09 14:30 UTC
+- Status: HEALTHY
+- EHI_FINAL: 98
+- Incidents: None
+
+Next flight: Clear to fly. No maintenance required.
+</pre>
+
+---
+
+<h2>🎯 The Full Architecture in One Diagram</h2>
+
+<div class="diagram">
+┌─────────────────────────────────────────────────────────────────┐
+│                         AIRCRAFT AIRFRAME                        │
+│                                                                   │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  ROTAX 915 iS ENGINE (4-cyl, turbocharged, air-cooled)  │   │
+│  │                                                           │   │
+│  │  [Combustion] → [CHT] + [EGT1-4] + [Vibration]          │   │
+│  │  [Fuel System] → [Fuel Flow] + [MAP]                    │   │
+│  │  [Oil System] → [OIL_PRESS] + [OIL_TEMP]                │   │
+│  │  [Crankshaft] → [RPM]                                    │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│              ↓ (19 sensor readings every 50ms)                   │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  AIRCRAFT TELEMETRY UNIT (Real aircraft sensors)         │   │
+│  │  - High-precision thermocouples (±2°C)                   │   │
+│  │  - Pressure transducers (±0.05 bar)                      │   │
+│  │  - Magnetic RPM sensor                                   │   │
+│  │  - GPS (altitude, airspeed)                              │   │
+│  │  - Context: OAT, wind, biome                             │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│              ↓ (telemetry stream @ 20 Hz)                        │
+└──────────────── WiFi / UDP / Serial Link ─────────────────────────┘
+                              ↓
+                 ┌────────────────────────┐
+                 │  RETRIBUTION SYSTEM    │  (Cloud or Ground Station)
+                 │                        │
+                 │ ┌──────────────────┐  │
+                 │ │ OpsEngineSim     │  │  [Option A: Stub Twin]
+                 │ │ (Physics Model)  │  │  - Nominal engine model
+                 │ │ - 4-stroke cycle │  │  - Generates synthetic telemetry
+                 │ │ - Thermal model  │  │  - For testing (no real aircraft)
+                 │ └──────────────────┘  │
+                 │          ↓             │
+                 │ ┌──────────────────┐  │
+                 │ │ Pure Engine ML   │  │  [ML Model]
+                 │ │ (91-class fault  │  │  - Trained on OpsEngineSim
+                 │ │  classifier)     │  │  - Detects fault signatures
+                 │ │ - Feature extraction   │  - Outputs: health_score,
+                 │ │ - Residual z-scores    │    fault class, confidence
+                 │ └──────────────────┘  │
+                 │          ↓             │
+                 │ ┌──────────────────┐  │
+                 │ │ Mission          │  │  [Reliability Engine]
+                 │ │ Reliability      │  │  - Trend analysis
+                 │ │ Engine           │  │  - P(success) calculation
+                 │ │ - Throttle-      │  │  - Derate search
+                 │ │   conditioned    │  │  - Confidence bands
+                 │ │   trends         │  │  - Recommendation ladder
+                 │ │ - Monte Carlo    │  │
+                 │ └──────────────────┘  │
+                 │          ↓             │
+                 │ ┌──────────────────┐  │
+                 │ │ TickFrame        │  │  [Output Schema]
+                 │ │ - mission block  │  │  - EHI (0–100)
+                 │ │ - health block   │  │  - P(success)
+                 │ │ - diagnosis      │  │  - Recommendation
+                 │ │ - limiters list  │  │  - Safe endurance
+                 │ └──────────────────┘  │
+                 │                        │
+                 └────────────────────────┘
+                              ↓
+                    ┌─────────────────────┐
+                    │  CONSOLE / WEB UI   │
+                    │                     │
+                    │ [Headline]          │
+                    │ "CONTINUE / DERATE" │
+                    │ P(success) with band│
+                    │                     │
+                    │ [Limiters Panel]    │
+                    │ Shows channels      │
+                    │ trending toward     │
+                    │ limits              │
+                    │                     │
+                    │ [3D Twin]           │
+                    │ Visual of engine    │
+                    │                     │
+                    │ [Alerts]            │
+                    │ Any limit breaches  │
+                    │                     │
+                    │ [ML Diagnosis]      │
+                    │ Fault class +       │
+                    │ confidence          │
+                    │                     │
+                    │ [Logs]              │
+                    │ Per-second          │
+                    │ telemetry record    │
+                    └─────────────────────┘
+                              ↓
+                         PILOT VIEW
+                    "Can I continue?"
+</div>
+
+---
+
+<h2>🔑 Key Conceptual Takeaways</h2>
+
+<ul class="check">
+  <li><strong>The Rotax 915 iS is complex.</strong> Four cylinders, turbo, fuel injection, oil cooling — multiple systems can degrade independently or cascade together.</li>
+  <li><strong>19 sensors = 19 stories.</strong> Each one tells you about power, heat, lubrication, fuel. Together they paint a complete picture.</li>
+  <li><strong>Residuals are the language.</strong> How far is the actual measurement from what a healthy engine predicts? Anomalies cluster into fault classes.</li>
+  <li><strong>EHI is a snapshot; P(success) is a forecast.</strong> EHI says "how degraded NOW." P(success) says "will it make it to landing?"</li>
+  <li><strong>Trends + physics = decisions.</strong> By measuring how fast a channel is degrading and projecting it against the remaining mission, we compute risk probabilistically.</li>
+  <li><strong>Uncertainty is quantified.</strong> We don't guess; we give bands (P10/P50/P90) and explicitly say when we don't know (transients, short windows).</li>
+  <li><strong>The recommendation ladder is data-driven.</strong> Not "always derate to 85%," but "derate to the minimum power that brings P(success) back to 96%."</li>
+</ul>
+
