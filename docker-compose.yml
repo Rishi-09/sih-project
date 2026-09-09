@@ -1,16 +1,16 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# SIH Project — Self-Hosted Stack (No Railway Required)
+# SIH Project — Self-Hosted Production Stack for Your Own Dedicated Server
 #
-# Runs all 4 services + Nginx reverse proxy on a single machine.
-# Access via http://<machine-ip> from any phone or PC on the network.
+# Runs all services containerized on your server:
+#   • Retribution Aero Engine Physics Simulator (Python 3.11, WebSocket :8766)
+#   • R2 UAV Engine ML Inference Microservice (FastAPI :8000)
+#   • Node.js Twin Server (Express, Socket.IO, SQLite :4000)
+#   • Next.js Web Frontend Operator Console (:3000)
+#   • Nginx Reverse Proxy (Single entry point on Port 80 / 443)
+#   • Watchdog (Health monitor with auto-restart and phone push alerts)
 #
-# Quick start:
+# One-command deployment on your server:
 #   docker compose up -d --build
-#
-# To expose publicly (phone access outside LAN):
-#   - Use a free Cloudflare Tunnel, or
-#   - Set up port-forwarding on your router for port 80/443, or
-#   - Run on any $5/month VPS (DigitalOcean, Hetzner, etc.)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 services:
@@ -30,7 +30,21 @@ services:
       retries: 3
       start_period: 15s
 
-  # ── 2. Node.js Twin Server (Express + Socket.IO on 4000) ──────────────────
+  # ── 2. Local ML Inference Microservice (FastAPI on 8000) ──────────────────
+  ml:
+    build: ./ML
+    container_name: r2-ml
+    restart: unless-stopped
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ── 3. Node.js Twin Server (Express + Socket.IO on 4000) ──────────────────
   server:
     build: ./server
     container_name: r2-server
@@ -38,18 +52,20 @@ services:
     depends_on:
       simulator:
         condition: service_healthy
+      ml:
+        condition: service_healthy
     environment:
       - PORT=4000
       - NODE_ENV=production
-      - DATABASE_URL=file:///app/data/twin.db
+      - DATABASE_URL=file:/app/data/twin.db
       - CORS_ORIGIN=http://localhost:3000,http://localhost,http://web:3000
       - OPS_WS_URL=ws://simulator:8766
-      # Optional — fill these in .env file for AI advisory & ML features:
-      - GROQ_API_KEY=${GROQ_API_KEY:-}
-      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
-      - ML_API_URL=${ML_API_URL:-}
+      - ML_API_URL=http://ml:8000
       - NTFY_TOPIC=${NTFY_TOPIC:-sih-twin-alerts}
       - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
+      # Optional Groq LLM API Key (if provided in .env, falls back gracefully if blank)
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
     volumes:
       - server-data:/app/data
     expose:
@@ -61,7 +77,7 @@ services:
       retries: 3
       start_period: 20s
 
-  # ── 3. Next.js Web Frontend (on 3000) ─────────────────────────────────────
+  # ── 4. Next.js Web Frontend Operator Console (on 3000) ─────────────────────
   web:
     build:
       context: ./web
@@ -78,14 +94,7 @@ services:
     expose:
       - "3000"
 
-  # ── 4. Nginx Reverse Proxy (single entry point on port 80) ────────────────
-  #
-  # Routes:
-  #   /           → Next.js web (port 3000)
-  #   /api/*      → Node.js server (port 4000)
-  #   /socket.io/ → Node.js server WebSocket upgrade (port 4000)
-  #
-  # This is what phones/browsers connect to. One URL for everything.
+  # ── 5. Nginx Reverse Proxy (Single entry point on port 80) ─────────────────
   proxy:
     image: nginx:alpine
     container_name: r2-proxy
@@ -98,11 +107,7 @@ services:
     volumes:
       - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
-  # ── 5. Watchdog — Auto-restart + Webhook Alerts ───────────────────────────
-  #
-  # Pings all services every 30s. If a service is down, Docker auto-restarts
-  # it (restart: unless-stopped), and the watchdog fires a webhook to your
-  # phone (Discord, Telegram, Slack, email, or any URL you configure).
+  # ── 6. Watchdog — Auto-restart & Phone Alerts ─────────────────────────────
   watchdog:
     build: ./deploy/watchdog
     container_name: r2-watchdog
@@ -111,15 +116,13 @@ services:
       - server
       - web
       - simulator
+      - ml
     environment:
       - CHECK_INTERVAL=30
       - SERVER_URL=http://server:4000/api/health
       - WEB_URL=http://web:3000
       - NTFY_TOPIC=${NTFY_TOPIC:-sih-twin-alerts}
       - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
-      # For Discord: https://discord.com/api/webhooks/...
-      # For Telegram: https://api.telegram.org/bot<TOKEN>/sendMessage?chat_id=<ID>&text=
-      # For Slack: https://hooks.slack.com/services/...
 
 volumes:
   server-data:
