@@ -19,6 +19,41 @@ app.use("/api/engines", enginesRouter);
 app.use("/api/runs", createRunsRouter(io));
 app.use("/api/notifications", notificationsRouter);
 
+app.get("/", (req, res) => {
+  if (req.accepts("html")) {
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Rotax 915 iS Twin Server</title>
+          <meta http-equiv="refresh" content="1;url=http://localhost:3000">
+          <style>
+            body { background: #0e1418; color: #e4ebef; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+            .card { background: #151d22; border: 1px solid #263239; border-radius: 8px; padding: 32px 40px; text-align: center; max-width: 480px; }
+            h2 { color: #54c6d1; margin-top: 0; }
+            a { color: #54c6d1; text-decoration: none; font-weight: 600; }
+            .btn { display: inline-block; margin-top: 16px; padding: 8px 20px; background: #12333a; border: 1px solid #54c6d1; color: #54c6d1; border-radius: 6px; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h2>✈ Twin Server Online (:4000)</h2>
+            <p style="color:#a3b3bb;">This is the backend API and WebSocket telemetry service.</p>
+            <p>The interactive operator console is on port 3000.</p>
+            <a href="http://localhost:3000" class="btn">Open Web Console (localhost:3000) →</a>
+          </div>
+        </body>
+      </html>
+    `);
+  } else {
+    res.json({
+      service: "rotax-915-is-twin-server",
+      status: "online",
+      port: config.port,
+      webApp: "http://localhost:3000",
+    });
+  }
+});
 
 app.get("/api/health", (_req, res) => {
   res.json({
