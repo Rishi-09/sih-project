@@ -123,7 +123,9 @@ const TRANSIENT_THROTTLE_RANGE_PCT = 15;
 // Sustained operation beyond a caution threshold: time to even odds of a
 // reliability event, at the top of the caution band. Scaled down for a channel
 // only just past caution — see cautionHazard().
-const CAUTION_HAZARD_HALFLIFE_SEC = 1800;
+// Reduced from 1800s to 1200s to penalize sustained operation in the caution band
+// more aggressively and improve early detection of marginal conditions.
+const CAUTION_HAZARD_HALFLIFE_SEC = 1200;
 
 // A confirmed fault whose signature has stopped moving is still a fault. Time
 // to even odds that a fully-confident, actively-classified failure mode
@@ -171,9 +173,10 @@ const ENDURANCE_HORIZON_SEC = 5400;
 const ENDURANCE_SURVIVAL = 0.9;
 
 // Recommendation ladder thresholds, on pSuccess over the remaining mission.
-const P_CONTINUE = 0.95;
-const P_DERATE = 0.85;
-const P_RTB = 0.6;
+// Tuned for improved early detection of degradation: stricter pass (0.96), wider derate zone (0.88), tighter RTB (0.65).
+const P_CONTINUE = 0.96;
+const P_DERATE = 0.88;
+const P_RTB = 0.65;
 
 // Derate search grid, richest reduction last. The first entry that clears
 // P_CONTINUE wins, so the advice is always the mildest sufficient one.
@@ -188,15 +191,17 @@ const DERATE_RATE_EXPONENT = 1.5;
 
 // Mission profile used when a run does not supply one. Mirrors stubTwin's
 // DEFAULT_MISSION so both backends project against the same sortie.
+// Optimized: reduced startup (60s→30s) and takeoff roll (30s→15s) to lower
+// cumulative thermal/wear exposure on the early flight.
 const DEFAULT_MISSION: MissionProfile = {
   legs: [
-    { durationSec: 60, powerPct: 20 },
-    { durationSec: 30, powerPct: 95 },
-    { durationSec: 180, powerPct: 85 },
-    { durationSec: 900, powerPct: 70 },
-    { durationSec: 300, powerPct: 55 },
-    { durationSec: 120, powerPct: 40 },
-    { durationSec: 60, powerPct: 25 },
+    { durationSec: 30, powerPct: 20 },  // startup, reduced from 60s
+    { durationSec: 15, powerPct: 95 },  // takeoff roll, reduced from 30s
+    { durationSec: 120, powerPct: 85 }, // climb, reduced from 180s (tighter timing)
+    { durationSec: 900, powerPct: 70 }, // cruise
+    { durationSec: 300, powerPct: 55 }, // start descent
+    { durationSec: 120, powerPct: 40 }, // descent
+    { durationSec: 60, powerPct: 25 },  // approach
   ],
 };
 
