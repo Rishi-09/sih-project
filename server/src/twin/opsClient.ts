@@ -14,11 +14,13 @@ import { PENDING_MISSION } from "./reliability";
  * TickFrame contract, then everything downstream (persistence, alerts, AI
  * advisory, broadcast) is unchanged.
  *
- * Defaults to the deployed Railway instance of the dedicated simulator so
- * this backend is reachable (and therefore the default over the stub twin,
- * see runManager.ts) without OPS_WS_URL being set. Override with
- * OPS_WS_URL=ws://localhost:8766 for local dev against a locally-run
- * run_ws_only.py.
+ * No hardcoded remote default on purpose: if OPS_WS_URL isn't set, this falls
+ * back to localhost so a machine without that env var (a fresh clone, a CI
+ * box, a contributor who hasn't set up Railway) fails to connect fast and
+ * cleanly rather than silently dialing someone else's deployed simulator.
+ * runManager.ts's connect() try/catch then routes the run to the stub twin.
+ * Set OPS_WS_URL to the deployed instance (e.g. the Railway wss:// domain)
+ * to use the real backend.
  *
  * Two real translation decisions, not oversights:
  * 1. server_ops streams telemetry at 20Hz; we downsample to ~1Hz here to
@@ -31,7 +33,7 @@ import { PENDING_MISSION } from "./reliability";
  *    CONTEXT.md / the chat log for why this was the point.
  */
 
-const OPS_WS_URL = process.env.OPS_WS_URL || "wss://sih-project-production-e90d.up.railway.app";
+const OPS_WS_URL = process.env.OPS_WS_URL || "ws://localhost:8766";
 const MIN_SIM_DT = 1.0; // seconds — downsample threshold
 const TRANSITION_GRACE_SEC = 20; // hold the displayed verdict through our own scripted throttle/altitude steps
 
