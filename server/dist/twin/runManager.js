@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.startRun = startRun;
 exports.reapOrphanedRuns = reapOrphanedRuns;
+exports.touchActivity = touchActivity;
+exports.getLastActivityAt = getLastActivityAt;
 exports.injectFault = injectFault;
 exports.clearFaults = clearFaults;
 exports.isActive = isActive;
@@ -79,6 +81,7 @@ async function startRun(req) {
         frameBuffer: [],
         pendingFrames: [],
         lastFrameT: null,
+        lastActivityAt: Date.now(),
     });
     return { runId: dbRun.id };
 }
@@ -103,16 +106,26 @@ async function reapOrphanedRuns() {
     });
     return count;
 }
+function touchActivity(runId) {
+    const entry = runs.get(runId);
+    if (entry)
+        entry.lastActivityAt = Date.now();
+}
+function getLastActivityAt(runId) {
+    return runs.get(runId)?.lastActivityAt;
+}
 function injectFault(runId, req) {
     const entry = runs.get(runId);
     if (!entry)
         throw new Error(`Unknown or inactive runId ${runId}`);
+    entry.lastActivityAt = Date.now();
     entry.engine.injectFault(req);
 }
 function clearFaults(runId) {
     const entry = runs.get(runId);
     if (!entry)
         throw new Error(`Unknown or inactive runId ${runId}`);
+    entry.lastActivityAt = Date.now();
     entry.engine.clearFaults();
 }
 function isActive(runId) {

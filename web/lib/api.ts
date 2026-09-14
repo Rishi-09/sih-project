@@ -15,6 +15,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   engines: () => request<import("./types").EngineSummary[]>("/api/engines"),
+  createEngine: (data?: { tail?: string; model?: string }) =>
+    request<import("./types").EngineSummary>("/api/engines", {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
+  deleteEngine: (id: string) => request<{ ok: boolean }>(`/api/engines/${id}`, { method: "DELETE" }),
   startRun: (engineId: string, scenario: string, seed?: number) =>
     request<{ runId: string }>("/api/runs", { method: "POST", body: JSON.stringify({ engineId, scenario, seed }) }),
   stopRun: (runId: string) => request<{ status: string }>(`/api/runs/${runId}/stop`, { method: "POST" }),

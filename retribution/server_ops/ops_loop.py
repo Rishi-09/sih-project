@@ -34,6 +34,8 @@ class OpsSimulationManager:
         # Runtime flags
         self.is_running = False
         self.is_paused = False
+        self.is_idle_paused = False
+        self.last_active_time = 0.0
         self.speed_multiplier = DEFAULT_SPEED_MULTIPLIER
         self.active_subscribers: Set[Any] = set()
         self.loop_task: Optional[asyncio.Task] = None
@@ -65,6 +67,9 @@ class OpsSimulationManager:
             
         self.is_running = True
         self.is_paused = False
+        self.is_idle_paused = False
+        import time
+        self.last_active_time = time.time()
         if self.loop_task is None or self.loop_task.done():
             self.loop_task = asyncio.create_task(self._run_loop())
         logger.info(f"Engine Ops sim loop running at {INNER_TICK_HZ} Hz ({self.speed_multiplier}x speed).")
@@ -75,6 +80,9 @@ class OpsSimulationManager:
 
     def resume(self):
         self.is_paused = False
+        self.is_idle_paused = False
+        import time
+        self.last_active_time = time.time()
         logger.info("Engine Ops simulation resumed.")
 
     def set_speed(self, speed: float):
@@ -88,37 +96,58 @@ class OpsSimulationManager:
         self.last_telemetry = None
         self.last_ml_result = None
         self.last_ml_sim_time = 0.0
+        self.is_idle_paused = False
+        import time
+        self.last_active_time = time.time()
         logger.info("Engine Ops state reset.")
 
     def set_player_input(self, control_data: Dict[str, Any]):
         """Forward player controls to engine context."""
+        import time
+        self.last_active_time = time.time()
         self.engine.set_player_input(control_data)
 
     def inject_fault(self, fault: str, severity: float, onset_delay: float = 0.0):
+        import time
+        self.last_active_time = time.time()
         self.engine.inject_fault(fault, severity, onset_delay)
 
     def clear_faults(self):
+        import time
+        self.last_active_time = time.time()
         self.engine.clear_faults()
 
     def start_mission(self, mission_id: int):
+        import time
+        self.last_active_time = time.time()
         self.mission_mgr.start_mission(mission_id)
 
     def abort_mission(self):
+        import time
+        self.last_active_time = time.time()
         self.mission_mgr.abort_mission()
 
     def register_client(self, websocket: Any):
+        import time
         self.active_subscribers.add(websocket)
+        self.last_active_time = time.time()
+        if self.is_idle_paused:
+            self.is_idle_paused = False
+            logger.info("Client connected. Resumed simulation from idle pause.")
         logger.info(f"Client connected. Active clients: {len(self.active_subscribers)}")
 
     def unregister_client(self, websocket: Any):
+        import time
         self.active_subscribers.discard(websocket)
+        if not self.active_subscribers:
+            self.last_active_time = time.time()
         logger.info(f"Client disconnected. Active clients: {len(self.active_subscribers)}")
 
     def get_full_state_snapshot(self) -> Dict[str, Any]:
         """Produce full state snapshot for new/reconnecting clients."""
         return {
             "is_running": self.is_running,
-            "is_paused": self.is_paused,
+            "is_paused": self.is_paused or self.is_idle_paused,
             "speed_multiplier": self.speed_multiplier,
             "inner_tick_hz": INNER_TICK_HZ,
             "missions": MISSIONS,
@@ -144,12 +173,25 @@ class OpsSimulationManager:
             self.active_subscribers.discard(dead_ws)
 
     async def _run_loop(self):
-        """Fixed 20 Hz inner loop."""
+        """Fixed 20 Hz inner loop with 2-minute idle auto-pause to conserve Railway credits."""
+        import time
         logger.info("20 Hz Engine Ops inner ticker active.")
         interval_s = 1.0 / INNER_TICK_HZ
+        IDLE_TIMEOUT_S = 120.0 # 2 minutes
         
         while self.is_running:
-            if not self.is_paused:
+            # Check for 2 minutes of idle without any connected clients
+            if not self.active_subscribers:
+                now = time.time()
+                if (now - self.last_active_time) > IDLE_TIMEOUT_S:
+                    if not self.is_idle_paused:
+                        self.is_idle_paused = True
+                        logger.info("No active WebSocket clients for 2 minutes. Auto-pausing simulator physics/ML loop to conserve Railway credits.")
+                    # Sleep longer during idle pause to reduce CPU consumption to ~0%
+                    await asyncio.sleep(0.5)
+                    continue
+
+            if not self.is_paused and not self.is_idle_paused:
                 try:
                     # 1. Compute fractional simulated dt
                     dt_sim = self.speed_multiplier / INNER_TICK_HZ

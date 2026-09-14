@@ -80,10 +80,19 @@ function createRunsRouter(io) {
         io.to(`run:${req.params.id}`).emit("run:status", { status: "stopped" });
         res.json({ status: "stopped" });
     });
+    router.post("/:id/heartbeat", (req, res) => {
+        if (!(0, runManager_1.isActive)(req.params.id)) {
+            res.status(404).json({ error: "run not found or not active" });
+            return;
+        }
+        (0, runManager_1.touchActivity)(req.params.id);
+        res.json({ ok: true });
+    });
     /** Is this run actually live in THIS process? The database's own status
      * cannot answer that — see reapOrphanedRuns. The console polls this while it
      * waits for a first frame so it can tell a slow start from a dead run. */
     router.get("/:id/status", (req, res) => {
+        (0, runManager_1.touchActivity)(req.params.id);
         res.json({ active: (0, runManager_1.isActive)(req.params.id), status: (0, runManager_1.getStatus)(req.params.id) ?? "stopped" });
     });
     router.get("/:id/telemetry", async (req, res) => {
