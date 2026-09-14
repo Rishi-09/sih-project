@@ -7,12 +7,18 @@ import { SENSOR_FAULT_BY_ID } from "./contract";
 import { PENDING_MISSION } from "./reliability";
 
 /**
- * WebSocket CLIENT for Retribution's server_ops (retribution/run_ws_only.py,
- * ws://localhost:8766 by default) — the real physics simulator + real,
- * today-retrained ML pipeline, replacing the TwinRun stub for live runs.
- * Node no longer computes physics or diagnosis itself for this path; it
- * relays server_ops's frames into our TickFrame contract, then everything
- * downstream (persistence, alerts, AI advisory, broadcast) is unchanged.
+ * WebSocket CLIENT for Retribution's server_ops (retribution/run_ws_only.py)
+ * — the real physics simulator + real, today-retrained ML pipeline,
+ * replacing the TwinRun stub for live runs. Node no longer computes physics
+ * or diagnosis itself for this path; it relays server_ops's frames into our
+ * TickFrame contract, then everything downstream (persistence, alerts, AI
+ * advisory, broadcast) is unchanged.
+ *
+ * Defaults to the deployed Railway instance of the dedicated simulator so
+ * this backend is reachable (and therefore the default over the stub twin,
+ * see runManager.ts) without OPS_WS_URL being set. Override with
+ * OPS_WS_URL=ws://localhost:8766 for local dev against a locally-run
+ * run_ws_only.py.
  *
  * Two real translation decisions, not oversights:
  * 1. server_ops streams telemetry at 20Hz; we downsample to ~1Hz here to
@@ -25,7 +31,7 @@ import { PENDING_MISSION } from "./reliability";
  *    CONTEXT.md / the chat log for why this was the point.
  */
 
-const OPS_WS_URL = process.env.OPS_WS_URL || "ws://localhost:8766";
+const OPS_WS_URL = process.env.OPS_WS_URL || "wss://sih-project-production-e90d.up.railway.app";
 const MIN_SIM_DT = 1.0; // seconds — downsample threshold
 const TRANSITION_GRACE_SEC = 20; // hold the displayed verdict through our own scripted throttle/altitude steps
 
