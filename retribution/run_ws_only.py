@@ -12,6 +12,7 @@ and OpsWSServer, just without OpsHTTPServer/webbrowser.
 import argparse
 import asyncio
 import logging
+import os
 import sys
 
 from server_ops.config import OPS_WS_PORT, DEFAULT_SPEED_MULTIPLIER
@@ -28,7 +29,7 @@ logger = logging.getLogger("EngineOpsWSOnly")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Retribution Engine Ops — WebSocket-only launcher")
-    parser.add_argument("--ws-port", type=int, default=OPS_WS_PORT)
+    parser.add_argument("--ws-port", type=int, default=int(os.environ.get("PORT", OPS_WS_PORT)))
     parser.add_argument("--speed", type=float, default=DEFAULT_SPEED_MULTIPLIER)
     parser.add_argument("--no-ml", action="store_true", help="Disable ML pipeline")
     return parser.parse_args()
