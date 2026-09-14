@@ -528,6 +528,7 @@
   letter-spacing: 0.04em;
 }
 
+.rec-assessing { background: var(--surface-2); color: var(--ink-3); }
 .rec-continue { background: var(--ok-soft); color: var(--ok); }
 .rec-derate, .rec-return_to_base { background: var(--caution-soft); color: var(--caution); }
 .rec-land_immediately { background: var(--critical-soft); color: var(--critical); }

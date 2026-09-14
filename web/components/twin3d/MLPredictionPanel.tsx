@@ -120,6 +120,17 @@ export function MLPredictionPanel({ frame }: Props) {
               RECOMMENDATION: {mission.recommendation.replace(/_/g, " ")}
             </span>
           </div>
+          {/* P(mission success) and EHI come from two different engines on two
+              different lookback windows (see reliability.ts / pure_engine_ml.py),
+              so right after a fault they can briefly disagree before both catch
+              up. Stating the projection's own confidence — computed alongside
+              pSuccess in reliability.ts, previously dropped on the floor here —
+              is what tells an operator whether a scary number is a settled
+              read or still warming up, instead of leaving them to guess. */}
+          <div className="mission-meta">
+            <span className={`conf conf-${mission.confidence}`}>{mission.confidence} confidence</span>
+            <span className="basis">{mission.basis.replace(/_/g, " ")}</span>
+          </div>
         </div>
       </div>
 
