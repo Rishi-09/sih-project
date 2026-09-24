@@ -16,7 +16,7 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
         {/* Left Simulator Telemetry Panel */}
         <aside className="ide-panel ide-panel-left">
           <div className="panel-tab-header">
-            <span className="tab-active">SIMULATOR TELEMETRY</span>
+            <span className="tab-active">RADAR SENSOR BUS // MIL-STD-1553</span>
           </div>
           <div className="panel-content">{leftPanel}</div>
         </aside>
@@ -33,7 +33,7 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
         {/* Right ML Predictions Panel */}
         <aside className="ide-panel ide-panel-right">
           <div className="panel-tab-header">
-            <span className="tab-active">AI / ML PREDICTOR</span>
+            <span className="tab-active">AI SURVIVABILITY & COMBAT DIAGNOSTICS</span>
           </div>
           <div className="panel-content">{rightPanel}</div>
         </aside>
