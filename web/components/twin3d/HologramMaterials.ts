@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 export type HealthGrade = "excellent" | "nominal" | "caution" | "critical";
+export type RenderMode = "tactical" | "wireframe" | "flir_thermal";
 
 export function getHealthGrade(score: number): HealthGrade {
   if (score >= 90) return "excellent";
@@ -10,12 +11,12 @@ export function getHealthGrade(score: number): HealthGrade {
 }
 
 export const HOLO_COLORS = {
-  excellent: 0x54c6d1, // Cyberpunk Cyan
-  nominal: 0x4cbc80,   // Emerald Green
-  caution: 0xe2a44a,   // Warning Amber
-  critical: 0xe76f62,  // Critical Crimson
-  grid: 0x183442,      // Grid cyan
-  wireframe: 0x8be9fd, // Wireframe cyan
+  excellent: 0x38bdf8, // Cyberpunk Cyan
+  nominal: 0x22c55e,   // Emerald Green
+  caution: 0xeab308,   // Warning Amber
+  critical: 0xef4444,  // Critical Crimson
+  grid: 0x1e293b,      // Grid cyan
+  wireframe: 0x64748b, // Wireframe cyan
 };
 
 // Subsystem accent colors, used to tint neutral metal and to key the rim glow.
@@ -79,6 +80,7 @@ function gradeColor(src: THREE.Color, accent: THREE.Color, tone: number): THREE.
 export interface HoloMaterial extends THREE.MeshStandardMaterial {
   userData: {
     subsystem: string;
+    baseColor: THREE.Color;
     baseEmissive: THREE.Color;
     rimColor: { value: THREE.Color };
     rimStrength: { value: number };
@@ -98,6 +100,60 @@ export class HologramMaterialFactory {
   }
 
   /** Every material built so far, so per-frame state can be applied in one pass. */
+  private currentRenderMode: RenderMode = "tactical";
+
+  public setRenderMode(mode: RenderMode) {
+    this.currentRenderMode = mode;
+    this.materials.forEach((mat) => {
+      if (mode === "wireframe") {
+        mat.wireframe = true;
+        if (mat.userData.baseColor) mat.color.copy(mat.userData.baseColor);
+        mat.emissive.setHex(0x38bdf8);
+        mat.emissiveIntensity = 0.45;
+      } else if (mode === "flir_thermal") {
+        mat.wireframe = false;
+        const sub = mat.userData.subsystem;
+        if (sub === "combustion") {
+          mat.color.setHex(0xf87171);
+          mat.emissive.setHex(0xef4444);
+          mat.emissiveIntensity = 0.55;
+        } else if (sub === "cooling") {
+          mat.color.setHex(0x38bdf8);
+          mat.emissive.setHex(0x0284c7);
+          mat.emissiveIntensity = 0.4;
+        } else if (sub === "lubrication") {
+          mat.color.setHex(0xfbbf24);
+          mat.emissive.setHex(0xd97706);
+          mat.emissiveIntensity = 0.45;
+        } else {
+          mat.color.setHex(0x22c55e);
+          mat.emissive.setHex(0x15803d);
+          mat.emissiveIntensity = 0.25;
+        }
+      } else {
+        // Tactical Solid CAD: Restore clean authentic uniform blueprint/metal color with cyan accents
+        mat.wireframe = false;
+        if (mat.userData.baseColor) mat.color.copy(mat.userData.baseColor);
+        mat.emissive.copy(mat.userData.baseEmissive);
+        mat.emissiveIntensity = 0.04;
+        mat.userData.rimColor.value.copy(mat.userData.baseEmissive);
+        mat.userData.rimStrength.value = 0.4;
+      }
+    });
+  }
+
+  public getRenderMode(): RenderMode {
+    return this.currentRenderMode;
+  }
+
+  public setGlobalOpacity(opacity: number) {
+    const clamped = THREE.MathUtils.clamp(opacity, 0.0, 1.0);
+    this.materials.forEach((mat) => {
+      mat.opacity = clamped;
+      mat.depthWrite = clamped > 0.4;
+    });
+  }
+
   public all(): HoloMaterial[] {
     return Array.from(this.materials.values());
   }
@@ -121,22 +177,24 @@ export class HologramMaterialFactory {
 
     const accent = new THREE.Color(SUBSYSTEM_HINTS[subsystem] ?? HOLO_COLORS.excellent);
     const { metalness, roughness, tone } = surfaceProps(srcName);
+    const finalColor = gradeColor(src.color, accent, tone);
 
     const mat = new THREE.MeshStandardMaterial({
-      color: gradeColor(src.color, accent, tone),
+      color: finalColor,
       metalness,
       roughness,
       emissive: accent.clone(),
       emissiveIntensity: 0.0,
       side: THREE.FrontSide,
-      // Opaque: the engine is ~100 nested shells, and stacking translucent
-      // surfaces is what previously flattened it into an unreadable blob.
-      transparent: false,
+      transparent: true,
+      depthWrite: true,
+      opacity: 1.0,
     }) as HoloMaterial;
 
     mat.name = key;
     mat.userData = {
       subsystem,
+      baseColor: finalColor.clone(),
       baseEmissive: accent.clone(),
       rimColor: { value: accent.clone() },
       rimStrength: { value: 0.4 },
@@ -180,6 +238,11 @@ export class HologramMaterialFactory {
    * including healthy ones, so a cleared fault always resets.
    */
   public setState(mat: HoloMaterial, healthScore: number, isFaulted: boolean, pulse: number) {
+    // If we're currently in thermal mode, let thermal colors dominate unless faulted
+    if (this.currentRenderMode === "flir_thermal" && !isFaulted) {
+      return;
+    }
+
     const grade = getHealthGrade(healthScore);
 
     if (isFaulted) {

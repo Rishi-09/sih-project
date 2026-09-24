@@ -43,9 +43,7 @@ export default function Twin3DPage() {
         if (cancelled) return;
         const e = engines.find((x) => x.id === engineId) ?? null;
         setEngine(e);
-        if (e?.latestRunStatus === "live" || e?.latestRunStatus === "degraded") {
-          setRunId(e.latestRunId);
-        }
+        // Do NOT auto-start the flight. Keep aircraft parked on launch pad until user clicks "Start Flight".
       })
       .finally(() => !cancelled && setLoadingEngine(false));
 
@@ -81,7 +79,7 @@ export default function Twin3DPage() {
     return (
       <main className="twin3d-page">
         <div style={{ padding: 40, textAlign: "center", color: "var(--ink-3)" }}>
-          Loading 3D Twin Workspace…
+          Loading 3D Twin…
         </div>
       </main>
     );
@@ -92,10 +90,10 @@ export default function Twin3DPage() {
       <main className="twin3d-page">
         <div style={{ padding: 40, textAlign: "center" }}>
           <Link href="/" className="btn">
-            ← Back to Fleet
+            ← Fleet
           </Link>
           <p style={{ marginTop: 20, color: "var(--ink-3)" }}>
-            Engine not found. Verify backend status or run <code>npm run seed</code>.
+            Engine not found. Verify backend status.
           </p>
         </div>
       </main>
@@ -109,11 +107,11 @@ export default function Twin3DPage() {
       {/* Top IDE Bar */}
       <header className="twin3d-topbar">
         <Link href={`/uav/${engineId}`} className="back-btn">
-          ← 2D Console
+          ← Console
         </Link>
         <div className="topbar-tail">
           <span>{engine.tail}</span>
-          <span className="topbar-engine-model">[{engine.model}]</span>
+          <span className="topbar-engine-model">Rotax 915 iS Turbo</span>
         </div>
 
         {twin.latest && (
@@ -124,14 +122,13 @@ export default function Twin3DPage() {
 
         <div className="topbar-spacer" />
 
-        {/* Fault state stays visible in the header even with the strip closed,
-            so the count is never hidden behind a collapsed panel. */}
+        {/* Fault state stays visible in the header even with the strip closed */}
         <button
           className={`faultbar-toggle ${injected.length > 0 ? "armed" : ""}`}
           onClick={() => setShowFaultBar((v) => !v)}
           aria-expanded={showFaultBar}
         >
-          {injected.length > 0 ? `${injected.length} FAULT${injected.length > 1 ? "S" : ""}` : "NOMINAL"}
+          {injected.length > 0 ? `${injected.length} Fault${injected.length > 1 ? "s" : ""}` : "Nominal"}
           <span className="faultbar-caret">{showFaultBar ? "▴" : "▾"}</span>
         </button>
 
@@ -167,7 +164,7 @@ export default function Twin3DPage() {
       {/* Main 4-Panel IDE View */}
       <Twin3DLayout
         leftPanel={<SimulatorPanel frame={twin.latest} />}
-        centerCanvas={<Twin3DCanvas frame={twin.latest} />}
+        centerCanvas={<Twin3DCanvas frame={twin.latest} isFlightActive={Boolean(runId)} />}
         rightPanel={<MLPredictionPanel frame={twin.latest} />}
         bottomLog={<LogPanel frame={twin.latest} />}
       />

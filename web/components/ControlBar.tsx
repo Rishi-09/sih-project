@@ -140,8 +140,8 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
       <div className="controls">
         <div className="control-bar">
           <select value={scenario} onChange={(e) => setScenario(e.target.value)}>
-            <option value="S1">S1 — Nominal sortie</option>
-            <option value="custom">Custom mission</option>
+            <option value="S1">Nominal Flight</option>
+            <option value="custom">Custom Flight</option>
           </select>
           <button
             className="btn btn-primary"
@@ -151,7 +151,7 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
             }}
             disabled={busy}
           >
-            Start sortie
+            Start Flight
           </button>
 
           <div className="spacer" />
@@ -161,12 +161,12 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
             type="button"
             className={`btn btn-toggle-switch ${idleKillEnabled ? "active" : ""}`}
             onClick={toggleIdleKill}
-            title={idleKillEnabled ? "Auto-kill on 2m idle: ON (Saves Railway credits)" : "Auto-kill on 2m idle: OFF"}
+            title={idleKillEnabled ? "Auto-pause after 2m idle" : "Auto-pause off"}
           >
             <span className="switch-track">
               <span className="switch-thumb" />
             </span>
-            <span className="switch-label">Auto-kill on 2m idle</span>
+            <span className="switch-label">Auto-pause (2m)</span>
           </button>
         </div>
 
@@ -244,14 +244,14 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
         </div>
 
         <button className="btn btn-danger-action" onClick={() => run(onStop)} disabled={busy}>
-          Stop sortie
+          End Flight
         </button>
       </div>
 
       <div className="injected-row">
         <span className="injected-cap">Active faults</span>
         {injected.length === 0 ? (
-          <span className="hint">none — engine is healthy</span>
+          <span className="hint">None (nominal)</span>
         ) : (
           injected.map((f) => (
             <span className="injected-chip" key={f}>
@@ -259,7 +259,7 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
             </span>
           ))
         )}
-        {injected.length > 1 && <span className="hint">compound — faults stack, they do not replace</span>}
+        {injected.length > 1 && <span className="hint">(Compound faults)</span>}
       </div>
 
       {idleNotice && (

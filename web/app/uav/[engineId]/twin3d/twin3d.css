@@ -31,22 +31,30 @@
   padding: 4px 8px;
   border-radius: 4px;
   background: var(--surface-2);
-  transition: all 0.15s ease;
+  border: 1px solid transparent;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .twin3d-topbar .back-btn:hover {
   color: var(--accent);
   border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.twin3d-topbar .back-btn:active {
+  transform: translateY(0) scale(0.97);
 }
 
 .topbar-tail {
+  font-family: var(--font-tactical);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 16px;
   letter-spacing: 0.05em;
   color: var(--accent);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .topbar-engine-model {
@@ -76,10 +84,10 @@
 
 .ide-workspace {
   display: grid;
-  grid-template-columns: 280px 1fr 310px;
+  grid-template-columns: 290px 1fr 320px;
   flex: 1;
   overflow: hidden;
-  background: #080d10;
+  background: var(--paper);
 }
 
 .ide-panel {
@@ -92,7 +100,7 @@
 }
 
 .ide-panel-center {
-  background: #060a0d;
+  background: #0f1410;
   border-right: 1px solid var(--rule);
 }
 
@@ -101,31 +109,33 @@
 }
 
 .ide-panel-bottom {
-  height: 160px;
+  height: 165px;
   border-top: 1px solid var(--rule);
   border-right: none;
-  background: #090e12;
+  background: var(--surface);
   flex-shrink: 0;
 }
 
 /* Panel Tab Headers */
 .panel-tab-header {
-  height: 32px;
+  font-family: var(--font-tactical);
   background: var(--surface-2);
   border-bottom: 1px solid var(--rule);
+  height: 36px;
   display: flex;
   align-items: center;
-  padding: 0 12px;
+  padding: 0 14px;
   gap: 10px;
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   flex-shrink: 0;
 }
 
 .tab-active {
-  font-family: var(--font-mono);
-  font-weight: 600;
+  font-family: var(--font-tactical);
+  font-weight: 700;
   color: var(--accent);
   display: flex;
   align-items: center;
@@ -134,7 +144,8 @@
 
 .tab-sub {
   color: var(--ink-3);
-  font-size: 10px;
+  font-size: 11px;
+  font-family: var(--font-mono);
 }
 
 .panel-content {
@@ -155,9 +166,9 @@
   position: absolute;
   top: 14px;
   left: 14px;
-  background: rgba(14, 20, 24, 0.75);
+  background: rgba(18, 24, 20, 0.85);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(84, 198, 209, 0.3);
+  border: 1px solid var(--accent-border);
   border-radius: 4px;
   padding: 5px 10px;
   font-family: var(--font-mono);
@@ -175,7 +186,7 @@
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
+  box-shadow: none;
   animation: holoPulse 2s infinite ease-in-out;
 }
 
@@ -189,13 +200,13 @@
   bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(14, 20, 24, 0.65);
+  background: rgba(18, 24, 20, 0.75);
   backdrop-filter: blur(4px);
   border: 1px solid var(--rule);
-  padding: 4px 12px;
+  padding: 4px 14px;
   border-radius: 20px;
   font-size: 11px;
-  color: var(--ink-3);
+  color: var(--ink-2);
   pointer-events: none;
 }
 
@@ -300,6 +311,11 @@
   border-radius: 3px;
   font-size: 11.5px;
   border-left: 2px solid transparent;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sensor-list-row:hover {
+  background: var(--surface-3);
+  transform: translateX(2px);
 }
 
 .sensor-list-row.z-norm { border-left-color: var(--accent); }
@@ -385,6 +401,7 @@
 }
 
 .diag-main-title {
+  font-family: var(--font-tactical);
   font-size: 15px;
   font-weight: 700;
   color: var(--accent);
@@ -442,6 +459,7 @@
   height: 100%;
   background: var(--accent);
   border-radius: 3px;
+  transition: width 0.45s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.35s ease;
 }
 
 .prob-pct {
@@ -534,8 +552,8 @@
 .rec-land_immediately { background: var(--critical-soft); color: var(--critical); }
 
 .ehi-banner {
-  background: #09151c;
-  border: 1px solid rgba(84, 198, 209, 0.25);
+  background: #16202c;
+  border: 1px solid rgba(56, 189, 248, 0.25);
   border-radius: 5px;
   padding: 10px;
   display: flex;
@@ -573,12 +591,12 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #080c0f;
+  background: #111822;
 }
 
 .log-toolbar {
   height: 28px;
-  background: #0d1419;
+  background: #16202c;
   border-bottom: 1px solid var(--rule);
   display: flex;
   align-items: center;
@@ -736,6 +754,7 @@
   border-bottom: 1px solid var(--rule);
   max-height: 30vh;
   overflow-y: auto;
+  transition: max-height 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
 }
 
 .faultbar-toggle {
@@ -750,16 +769,26 @@
   display: flex;
   align-items: center;
   gap: 7px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.faultbar-toggle:hover { border-color: var(--accent); color: var(--ink-2); }
+.faultbar-toggle:hover { 
+  border-color: var(--accent); 
+  color: var(--ink-2); 
+  transform: translateY(-1px);
+}
+.faultbar-toggle:active {
+  transform: translateY(0) scale(0.97);
+}
 /* Armed state is legible with the strip collapsed — the count must never be
    the only thing telling you faults are live. */
 .faultbar-toggle.armed {
   background: var(--caution-soft);
   border-color: var(--caution);
   color: var(--caution);
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.25);
 }
-.faultbar-caret { font-size: 9px; opacity: 0.7; }
+.faultbar-caret { font-size: 9px; opacity: 0.7; transition: transform 0.25s ease; }
 
 /* Ground-truth injected faults in the log stream, beside the model's verdict. */
 .log-injected {

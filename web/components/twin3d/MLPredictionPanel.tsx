@@ -41,15 +41,15 @@ export function MLPredictionPanel({ frame }: Props) {
   return (
     <div className="panel-inner ml-panel-scroll">
       <div className="panel-header-badge">
-        <span className="badge-title">AI / ML PREDICTIONS</span>
+        <span className="badge-title">AI Diagnostics</span>
         <span className={`badge-status ${isHealthy ? "status-ok" : "status-fault"}`}>
-          {isHealthy ? "NOMINAL" : "FAULT DETECTED"}
+          {isHealthy ? "Nominal" : "Fault Detected"}
         </span>
       </div>
 
       {/* Primary Diagnosis & Confidence */}
       <div className="section-block">
-        <div className="section-title">DIAGNOSIS CLASSIFIER</div>
+        <div className="section-title">Health State</div>
         <div className="diag-header-card">
           <div className="diag-main-title">
             {diagnosis.label.replace(/_/g, " ")}
@@ -81,11 +81,9 @@ export function MLPredictionPanel({ frame }: Props) {
 
       {/* Subsystem Health Scores */}
       <div className="section-block">
-        <div className="section-title">SUBSYSTEM HEALTH INDICES</div>
+        <div className="section-title">Subsystems</div>
         <div className="subsystems-grid">
           {Object.entries(health.subsystems).map(([name, val]) => {
-            // null = not yet scored. Previously defaulted to 100, painting an
-            // un-evaluated subsystem bright green.
             const score = typeof val === "number" ? val : null;
             const grade =
               score === null ? "sub-unknown" : score >= 80 ? "sub-good" : score >= 50 ? "sub-warn" : "sub-crit";
@@ -101,32 +99,25 @@ export function MLPredictionPanel({ frame }: Props) {
 
       {/* Prognosis & Mission Reliability */}
       <div className="section-block">
-        <div className="section-title">PROGNOSIS & RUL</div>
+        <div className="section-title">Prognosis</div>
         <div className="prognosis-box">
           <div className="prog-metric-row">
-            <span className="prog-k">REMAINING USEFUL LIFE (RUL)</span>
+            <span className="prog-k">Remaining Life</span>
             <span className="prog-v highlight-text">{fmtSec(prognosis.rulSec)}</span>
           </div>
           <div className="prog-metric-row">
-            <span className="prog-k">P(MISSION SUCCESS)</span>
+            <span className="prog-k">Mission Success</span>
             <span className="prog-v">{mission.pSuccess === null ? "—" : `${Math.round(mission.pSuccess * 100)}%`}</span>
           </div>
           <div className="prog-metric-row">
-            <span className="prog-k">SAFE ENDURANCE</span>
+            <span className="prog-k">Safe Endurance</span>
             <span className="prog-v">{fmtSec(mission.safeEnduranceSec)}</span>
           </div>
           <div className="rec-badge-wrapper">
             <span className={`rec-badge rec-${mission.recommendation}`}>
-              RECOMMENDATION: {mission.recommendation.replace(/_/g, " ")}
+              {mission.recommendation.replace(/_/g, " ")}
             </span>
           </div>
-          {/* P(mission success) and EHI come from two different engines on two
-              different lookback windows (see reliability.ts / pure_engine_ml.py),
-              so right after a fault they can briefly disagree before both catch
-              up. Stating the projection's own confidence — computed alongside
-              pSuccess in reliability.ts, previously dropped on the floor here —
-              is what tells an operator whether a scary number is a settled
-              read or still warming up, instead of leaving them to guess. */}
           <div className="mission-meta">
             <span className={`conf conf-${mission.confidence}`}>{mission.confidence} confidence</span>
             <span className="basis">{mission.basis.replace(/_/g, " ")}</span>
@@ -136,9 +127,9 @@ export function MLPredictionPanel({ frame }: Props) {
 
       {/* EHI Overall Gauge */}
       <div className="ehi-banner">
-        <div className="ehi-banner-text">ENGINE HEALTH INDEX (EHI)</div>
+        <div className="ehi-banner-text">Engine Health Index</div>
         <div className={`ehi-banner-val ${getEhiGrade(health.ehi)}`}>
-          {health.ehi === null ? "—" : Math.round(health.ehi)} / 100
+          {health.ehi === null ? "—" : `${Math.round(health.ehi)}%`}
         </div>
       </div>
     </div>

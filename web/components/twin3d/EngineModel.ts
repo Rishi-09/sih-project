@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
-import { HologramMaterialFactory, HoloMaterial } from "./HologramMaterials";
+import { HologramMaterialFactory, HoloMaterial, RenderMode } from "./HologramMaterials";
 import { TickFrame } from "@/lib/types";
 
 export interface EngineComponentRef {
@@ -191,40 +191,96 @@ export class EngineModel {
    * substring fallback keeps unknown labels from silently highlighting nothing.
    */
   public static faultedSubsystems(rawLabel: string): Set<string> {
-    const label = rawLabel.toLowerCase();
-
-    const exact: Record<string, string[]> = {
-      lubrication_degradation: ["lubrication"],
-      cooling_failure: ["cooling"],
-      ignition_fault_cyl3: ["combustion"],
-      induction_loss: ["induction_fuel"],
-      fuel_system_degradation: ["induction_fuel"],
-      bearing_wear: ["mechanical"],
-      injector_fault_cyl3: ["induction_fuel", "combustion"],
-      electrical_degradation: ["electrical"],
-      sensor_freeze_coolant: ["electrical", "cooling"],
-      sensor_drift_oilpress: ["electrical", "lubrication"],
-    };
-
-    if (exact[label]) return new Set(exact[label]);
-
+    if (!rawLabel) return new Set();
     const out = new Set<string>();
-    if (label.includes("lubrication") || label.includes("oil")) out.add("lubrication");
-    if (label.includes("cooling") || label.includes("coolant") || label.includes("overheat")) out.add("cooling");
-    if (label.includes("ignition") || label.includes("combustion") || label.includes("misfire")) out.add("combustion");
-    if (label.includes("induction") || label.includes("fuel") || label.includes("injector") || label.includes("boost")) out.add("induction_fuel");
-    if (label.includes("bearing") || label.includes("mechanical") || label.includes("vib")) out.add("mechanical");
-    if (label.includes("electrical") || label.includes("sensor")) out.add("electrical");
+
+    const parts = rawLabel.toLowerCase().split(/[+,;&]/);
+    for (const part of parts) {
+      const label = part.trim();
+      if (!label || label === "healthy" || label === "nominal" || label === "assessing") continue;
+
+      const exact: Record<string, string[]> = {
+        lubrication_degradation: ["lubrication"],
+        oil_leak: ["lubrication"],
+        oil_pump_wear: ["lubrication"],
+        cooling_failure: ["cooling"],
+        cooling_leak: ["cooling"],
+        radiator_blockage: ["cooling"],
+        overheat: ["cooling"],
+        ignition_fault_cyl3: ["combustion"],
+        spark_plug_wear: ["combustion"],
+        misfire: ["combustion"],
+        induction_loss: ["induction_fuel"],
+        manifold_leak: ["induction_fuel"],
+        turbo_wastegate_stuck: ["induction_fuel"],
+        fuel_system_degradation: ["induction_fuel"],
+        fuel_pump_wear: ["induction_fuel"],
+        fuel_filter_clog: ["induction_fuel"],
+        bearing_wear: ["mechanical"],
+        mechanical_wear: ["mechanical"],
+        injector_fault_cyl3: ["induction_fuel", "combustion"],
+        injector_clog: ["induction_fuel", "combustion"],
+        electrical_degradation: ["electrical"],
+        alternator_failure: ["electrical"],
+        battery_drain: ["electrical"],
+        sensor_freeze_coolant: ["electrical", "cooling"],
+        sensor_drift_oilpress: ["electrical", "lubrication"],
+      };
+
+      if (exact[label]) {
+        exact[label].forEach((s) => out.add(s));
+      } else {
+        if (label.includes("lubricat") || label.includes("oil")) out.add("lubrication");
+        if (label.includes("cool") || label.includes("radiat") || label.includes("temp")) out.add("cooling");
+        if (label.includes("ignit") || label.includes("combust") || label.includes("misfire") || label.includes("spark") || label.includes("egt")) out.add("combustion");
+        if (label.includes("induct") || label.includes("fuel") || label.includes("inject") || label.includes("boost") || label.includes("map") || label.includes("flow")) out.add("induction_fuel");
+        if (label.includes("bear") || label.includes("mechan") || label.includes("vib") || label.includes("tranny") || label.includes("gear")) out.add("mechanical");
+        if (label.includes("electr") || label.includes("volt") || label.includes("alt") || label.includes("sensor") || label.includes("ecu")) out.add("electrical");
+      }
+    }
     return out;
+  }
+
+  private currentScale: number = 1.0;
+  private targetScale: number = 1.0;
+
+  public setRevealScale(scale: number) {
+    this.targetScale = scale;
+  }
+
+  public setOpacity(opacity: number) {
+    this.matFactory.setGlobalOpacity(opacity);
+  }
+
+  public update(delta: number) {
+    if (Math.abs(this.currentScale - this.targetScale) > 0.0005) {
+      this.currentScale = THREE.MathUtils.damp(this.currentScale, this.targetScale, 8.0, delta);
+      this.group.scale.setScalar(this.currentScale);
+    }
+  }
+
+  public setRenderMode(mode: RenderMode) {
+    this.matFactory.setRenderMode(mode);
   }
 
   public updateFromFrame(frame: TickFrame | null) {
     this.lastFrame = frame;
     if (!frame || !this.isLoaded) return;
 
-    const { health, diagnosis } = frame;
-    const isFaultActive = !!diagnosis && diagnosis.label !== "healthy";
-    const faulted = isFaultActive ? EngineModel.faultedSubsystems(diagnosis.label) : new Set<string>();
+    const { health, diagnosis, injectedFaults } = frame;
+    const faulted = new Set<string>();
+    if (injectedFaults && Array.isArray(injectedFaults)) {
+      for (const f of injectedFaults) {
+        for (const sub of EngineModel.faultedSubsystems(f)) {
+          faulted.add(sub);
+        }
+      }
+    }
+    if (diagnosis && diagnosis.label && diagnosis.label !== "healthy" && diagnosis.label !== "assessing") {
+      for (const sub of EngineModel.faultedSubsystems(diagnosis.label)) {
+        faulted.add(sub);
+      }
+    }
 
     // health.subsystems has 8 categories (matches the real ML pipeline);
     // the 3D asset's mesh regions were built with 6 — induction/fuel/injection

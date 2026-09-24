@@ -18,24 +18,24 @@ export function SimulatorPanel({ frame }: Props) {
   return (
     <div className="panel-inner sim-panel-scroll">
       <div className="panel-header-badge">
-        <span className="badge-title">SIMULATOR TELEMETRY</span>
-        <span className="badge-freq">1 HZ STREAM</span>
+        <span className="badge-title">Telemetry</span>
+        <span className="badge-freq">Live</span>
       </div>
 
       {/* Flight Context */}
       <div className="section-block">
-        <div className="section-title">FLIGHT CONTEXT</div>
+        <div className="section-title">Flight State</div>
         <div className="context-mini-grid">
           <div className="context-item">
-            <span className="ctx-k">THROTTLE</span>
+            <span className="ctx-k">Throttle</span>
             <span className="ctx-v">{frame ? `${frame.context.throttle_pct.toFixed(0)}%` : "—"}</span>
           </div>
           <div className="context-item">
-            <span className="ctx-k">ALTITUDE</span>
+            <span className="ctx-k">Altitude</span>
             <span className="ctx-v">{frame ? `${frame.context.alt_m.toFixed(0)} m` : "—"}</span>
           </div>
           <div className="context-item">
-            <span className="ctx-k">AIRSPEED</span>
+            <span className="ctx-k">Airspeed</span>
             <span className="ctx-v">{frame ? `${frame.context.ias_kt.toFixed(0)} kt` : "—"}</span>
           </div>
           <div className="context-item">
@@ -47,12 +47,12 @@ export function SimulatorPanel({ frame }: Props) {
 
       {/* 19 Engine Sensors */}
       <div className="section-block">
-        <div className="section-title">19 ENGINE SENSORS</div>
+        <div className="section-title">Engine Sensors (19)</div>
         <div className="sensor-list-table">
           <div className="sensor-list-header">
-            <span>CHANNEL</span>
-            <span>VALUE</span>
-            <span>RESIDUAL</span>
+            <span>Sensor</span>
+            <span>Value</span>
+            <span>Residual</span>
           </div>
           {ENGINE_CHANNELS.map((ch) => {
             const val = frame?.sensors?.[ch];
