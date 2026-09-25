@@ -1,0 +1,153 @@
+"use client";
+
+import { TickFrame } from "@/lib/types";
+import { PhysicsTwinPanel } from "@/components/PhysicsTwinPanel";
+
+interface Props {
+  frame: TickFrame | null;
+}
+
+function fmtSec(s: number | null): string {
+  if (s === null) return "—";
+  const m = Math.floor(s / 60);
+  const r = Math.round(s % 60);
+  return `${m}m ${r}s`;
+}
+
+function getEhiGrade(ehi: number | null) {
+  // No evaluation yet is its own grade — not the top one.
+  if (ehi === null) return "ehi-unknown";
+  if (ehi >= 80) return "ehi-good";
+  if (ehi >= 50) return "ehi-warn";
+  return "ehi-crit";
+}
+
+export function MLPredictionPanel({ frame }: Props) {
+  if (!frame) {
+    return (
+      <div className="panel-inner ml-panel-scroll">
+        <div className="panel-header-badge">
+          <span className="badge-title">PHYSICS TWIN (M1–M6)</span>
+          <span className="badge-freq">AWAITING RUN</span>
+        </div>
+        <div className="empty-ml-state">Connect to active sortie to initialize AI inference pipeline.</div>
+      </div>
+    );
+  }
+
+  const { diagnosis, health, prognosis, mission } = frame;
+  const sortedProbs = Object.entries(diagnosis.probs || {}).sort((a, b) => b[1] - a[1]);
+  const isHealthy = diagnosis.label === "healthy";
+
+  return (
+    <div className="panel-inner ml-panel-scroll">
+      <div className="panel-header-badge">
+        <span className="badge-title">PHYSICS TWIN (M1–M6)</span>
+        <span className={`badge-status ${isHealthy ? "status-ok" : "status-fault"}`}>
+          {isHealthy ? "NOMINAL" : "FAULT DETECTED"}
+        </span>
+      </div>
+
+      {/* Primary Diagnosis & Confidence */}
+      <div className="section-block">
+        <div className="section-title">DIAGNOSIS</div>
+        <div className="diag-header-card">
+          <div className="diag-main-title">
+            {diagnosis.label.replace(/_/g, " ")}
+            {diagnosis.cylinder ? ` (Cyl ${diagnosis.cylinder})` : ""}
+          </div>
+          <div className="diag-metrics-row">
+            <span className="diag-conf-badge">
+              Confidence: {Math.round(diagnosis.confidence * 100)}%
+            </span>
+            <span className="diag-anomaly-badge">
+              Anomaly: {diagnosis.anomalyScore.toFixed(2)}
+            </span>
+          </div>
+        </div>
+
+        {/* Probability Breakdown */}
+        <div className="prob-bars-container">
+          {sortedProbs.slice(0, 4).map(([name, p]) => (
+            <div key={name} className="prob-mini-row">
+              <span className="prob-label">{name.replace(/_/g, " ")}</span>
+              <div className="prob-track">
+                <div className="prob-fill" style={{ width: `${Math.min(100, p * 100)}%` }} />
+              </div>
+              <span className="prob-pct">{Math.round(p * 100)}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* The twin's evidence: sensor trust, worst health factors, causes with first checks */}
+      <div className="section-block">
+        <div className="section-title">PHYSICS EVIDENCE</div>
+        <PhysicsTwinPanel frame={frame} compact />
+      </div>
+
+      {/* Subsystem Health Scores */}
+      <div className="section-block">
+        <div className="section-title">SUBSYSTEM HEALTH INDICES</div>
+        <div className="subsystems-grid">
+          {Object.entries(health.subsystems).map(([name, val]) => {
+            // null = not yet scored. Previously defaulted to 100, painting an
+            // un-evaluated subsystem bright green.
+            const score = typeof val === "number" ? val : null;
+            const grade =
+              score === null ? "sub-unknown" : score >= 80 ? "sub-good" : score >= 50 ? "sub-warn" : "sub-crit";
+            return (
+              <div key={name} className={`subsystem-card ${grade}`}>
+                <span className="sub-name">{name.replace(/_/g, " ")}</span>
+                <span className="sub-score">{score === null ? "—" : score.toFixed(0)}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Prognosis & Mission Reliability */}
+      <div className="section-block">
+        <div className="section-title">PROGNOSIS & RUL</div>
+        <div className="prognosis-box">
+          <div className="prog-metric-row">
+            <span className="prog-k">TIME TO REDLINE AT THIS POWER</span>
+            <span className="prog-v highlight-text">{fmtSec(prognosis.rulSec)}</span>
+          </div>
+          <div className="prog-metric-row">
+            <span className="prog-k">P(MISSION SUCCESS)</span>
+            <span className="prog-v">{mission.pSuccess === null ? "—" : `${Math.round(mission.pSuccess * 100)}%`}</span>
+          </div>
+          <div className="prog-metric-row">
+            <span className="prog-k">SAFE ENDURANCE</span>
+            <span className="prog-v">{fmtSec(mission.safeEnduranceSec)}</span>
+          </div>
+          <div className="rec-badge-wrapper">
+            <span className={`rec-badge rec-${mission.recommendation}`}>
+              RECOMMENDATION: {mission.recommendation.replace(/_/g, " ")}
+            </span>
+          </div>
+          {/* P(mission success) and EHI come from two different engines on two
+              different lookback windows (see reliability.ts / pure_engine_ml.py),
+              so right after a fault they can briefly disagree before both catch
+              up. Stating the projection's own confidence — computed alongside
+              pSuccess in reliability.ts, previously dropped on the floor here —
+              is what tells an operator whether a scary number is a settled
+              read or still warming up, instead of leaving them to guess. */}
+          <div className="mission-meta">
+            <span className={`conf conf-${mission.confidence}`}>{mission.confidence} confidence</span>
+            <span className="basis">{mission.basis.replace(/_/g, " ")}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* EHI Overall Gauge */}
+      <div className="ehi-banner">
+        <div className="ehi-banner-text">ENGINE HEALTH INDEX (EHI)</div>
+        <div className={`ehi-banner-val ${getEhiGrade(health.ehi)}`}>
+          {health.ehi === null ? "—" : Math.round(health.ehi)} / 100
+        </div>
+      </div>
+    </div>
+  );
+}

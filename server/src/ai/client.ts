@@ -1,0 +1,147 @@
+import Groq from "groq-sdk";
+import { config } from "../config";
+import { TickFrame } from "../types";
+import { ADVISORY_SYSTEM_PROMPT, CHAT_SYSTEM_PROMPT } from "./prompts";
+import { getKbEntry } from "./kb";
+
+// Absent GROQ_API_KEY is a supported, first-class state here — every AI route
+// degrades to the knowledge-base fallback rather than erroring. See
+// server/.env.example and published plan §A7. Groq's chat completions API is
+// OpenAI-compatible: messages are {role, content}, system prompt goes in the
+// messages array (no separate top-level `system` field).
+const client = config.groqApiKey ? new Groq({ apiKey: config.groqApiKey }) : null;
+
+export interface AdvisoryResult {
+  contentMd: string;
+  source: "llm" | "offline";
+  model?: string;
+}
+
+export async function generateAdvisory(frame: TickFrame): Promise<AdvisoryResult> {
+  const kb = getKbEntry(frame.diagnosis.label, kbContext(frame));
+  if (!client) return { contentMd: kb.fallbackAdvisory, source: "offline" };
+
+  const evidence = topResiduals(frame, 5);
+  const userPrompt = [
+    `Current diagnosis: ${frame.diagnosis.label} (confidence ${frame.diagnosis.confidence}).`,
+    frame.diagnosis.cylinder ? `Affected cylinder: ${frame.diagnosis.cylinder}.` : "",
+    `Health index: ${frame.health.ehi}/100. Subsystem scores: ${JSON.stringify(frame.health.subsystems)}.`,
+    `Top deviating channels (z-score): ${evidence.map(([c, z]) => `${c}=${z}σ`).join(", ")}.`,
+    `Known-fault reference: ${kb.description}`,
+    twinEvidence(frame),
+    `Mission state: P(success)=${frame.mission.pSuccess}, recommendation=${frame.mission.recommendation}.`,
+    "Write the advisory now, following the required structure.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  try {
+    const response = await client.chat.completions.create({
+      model: config.groqModel,
+      // Deliberately short — this is a structured, per-alert advisory read
+      // standing at the aircraft, not a long-form report.
+      max_tokens: 1024,
+      messages: [
+        { role: "system", content: ADVISORY_SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
+    });
+    const text = response.choices[0]?.message?.content ?? "";
+    if (!text) throw new Error("empty completion from advisory call");
+    return { contentMd: text, source: "llm", model: config.groqModel };
+  } catch (err) {
+    // Deliberate catch-all, not a missed error-handling nuance: the plan calls
+    // for identical behavior on every failure mode (bad key, rate limit,
+    // timeout, network) — fall back to the offline advisory so the AI panel
+    // never shows an error on stage. See published plan §A7.
+    console.error("advisory LLM call failed, serving offline fallback:", err);
+    return { contentMd: kb.fallbackAdvisory, source: "offline" };
+  }
+}
+
+export interface ChatResult {
+  answer: string;
+  source: "llm" | "offline";
+}
+
+export async function answerChat(question: string, recentFrames: TickFrame[]): Promise<ChatResult> {
+  const latest = recentFrames[recentFrames.length - 1];
+  if (!latest) return { answer: "No telemetry is available for this run yet.", source: "offline" };
+
+  if (!client) {
+    return {
+      answer: `Offline mode (no GROQ_API_KEY configured): current diagnosis is "${latest.diagnosis.label}" at ${Math.round(
+        latest.diagnosis.confidence * 100,
+      )}% confidence, health index ${latest.health.ehi}/100. Set the key in server/.env for a grounded natural-language answer.`,
+      source: "offline",
+    };
+  }
+
+  try {
+    const response = await client.chat.completions.create({
+      model: config.groqModel,
+      max_tokens: 512,
+      messages: [
+        { role: "system", content: CHAT_SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: `Telemetry context (last ${recentFrames.length}s of this run):\n${summarizeFrames(recentFrames)}\n\nOperator question: ${question}`,
+        },
+      ],
+    });
+    const text = response.choices[0]?.message?.content ?? "";
+    return { answer: text || "No answer generated.", source: "llm" };
+  } catch (err) {
+    console.error("chat LLM call failed:", err);
+    return { answer: "The advisory service is temporarily unavailable — try again shortly.", source: "offline" };
+  }
+}
+
+function topResiduals(frame: TickFrame, n: number): [string, number][] {
+  return Object.entries(frame.residualZ)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .slice(0, n);
+}
+
+function summarizeFrames(frames: TickFrame[]): string {
+  const latest = frames[frames.length - 1];
+  const evidence = topResiduals(latest, 6);
+  return [
+    `t=${latest.t}s, phase=${latest.phase}`,
+    `diagnosis=${latest.diagnosis.label} (confidence ${latest.diagnosis.confidence}), cylinder=${latest.diagnosis.cylinder ?? "n/a"}`,
+    `health: ehi=${latest.health.ehi}, subsystems=${JSON.stringify(latest.health.subsystems)}`,
+    `top residuals: ${evidence.map(([c, z]) => `${c}=${z}σ`).join(", ")}`,
+    `sensor fault: ${latest.diagnosis.sensorFault.channel ?? "none"}`,
+    twinEvidence(latest),
+    `mission: pSuccess=${latest.mission.pSuccess}, recommendation=${latest.mission.recommendation}`,
+    `open alerts: ${latest.alerts.map((a) => a.code).join(", ") || "none"}`,
+  ].join("\n");
+}
+
+function kbContext(frame: TickFrame) {
+  return {
+    cylinder: frame.diagnosis.cylinder,
+    channel: frame.diagnosis.sensorFault.channel,
+    mode: frame.diagnosis.sensorFault.mode,
+  };
+}
+
+/** The physics twin's own evidence, so the advisory explains the twin's reasoning rather than guessing. */
+function twinEvidence(frame: TickFrame): string {
+  const t = frame.twin;
+  if (!t) return "Physics twin: no assessment available yet.";
+  const worst = [...t.factors]
+    .sort((a, b) => b.deficit - a.deficit)
+    .slice(0, 3)
+    .map((f) => `${f.label} ${f.value.toFixed(3)} (${Math.round(100 * f.deficit)}% of the way to failure)`);
+  const sensors = t.sensorFaults.map((f) => `${f.channel} ${f.mode} (${f.evidence})`);
+  const causes = t.causes.map((c) => `${c.label} ${Math.round(100 * c.score)}% - first check: ${c.check}`);
+  const ttl = t.limitingChannel ? `${t.limitingChannel} reaches redline in ${Math.round(t.timeToLimit[t.limitingChannel])} s at current power` : "no thermal redline reachable at current power";
+  return [
+    `Physics twin attribution: ${t.attribution}.`,
+    `Worst health factors: ${worst.join("; ")}.`,
+    `Distrusted sensors: ${sensors.join("; ") || "none"}.`,
+    `Ranked causes: ${causes.join(" | ") || "none"}.`,
+    `Thermal: ${ttl}.`,
+  ].join("\n");
+}

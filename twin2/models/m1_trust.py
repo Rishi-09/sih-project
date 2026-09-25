@@ -68,8 +68,14 @@ def _floor(ch):
     return SPIKE_FLOOR["egt"] if ch.startswith("egt") else SPIKE_FLOOR.get(ch, 0.0)
 
 
-def shape_rules(df, expected: Dict[str, np.ndarray]):
-    """Returns (faults, masks, excluded_channels)."""
+def shape_rules(df, expected: Dict[str, np.ndarray], noise_sigma: Optional[Dict[str, float]] = None):
+    """Returns (faults, masks, excluded_channels).
+
+    noise_sigma: per-channel reading scatter. When a channel's noise is at least ~0.4 ADC steps, a
+    healthy sensor cannot repeat one code for a minute, so a long identical run is a freeze even when
+    the physics says the true value is steady (live mode). Without it, a freeze is only called when the
+    model says the value had to move (fleet mode).
+    """
     running = (df["phase"].to_numpy() != "STARTUP") & (df["phase"].to_numpy() != "SHUTDOWN")
     faults, masks, excluded = [], {}, []
     for ch in FIT_CHANNELS:
@@ -92,7 +98,8 @@ def shape_rules(df, expected: Dict[str, np.ndarray]):
             a = best_end - best_len
             exp_seg = expected[ch][a:best_end + 1]
             lsb = ADC_LSB.get(ch, 0.01)
-            if exp_seg.max() - exp_seg.min() > 6 * lsb:
+            noisy = noise_sigma is not None and noise_sigma.get(ch, 0.0) >= 0.4 * lsb
+            if noisy or exp_seg.max() - exp_seg.min() > 6 * lsb:
                 faults.append(SensorFault(ch, "stuck", 0.99, int(a),
                                           f"frozen at {v[a]:.2f} for {best_len} s while the model moved "
                                           f"{exp_seg.max() - exp_seg.min():.2f}"))

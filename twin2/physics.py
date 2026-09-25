@@ -232,11 +232,12 @@ ADC_LSB = {
 }
 
 
-def first_order_lag(x: np.ndarray, tau: float) -> np.ndarray:
-    """y[k] = a*x[k] + (1-a)*y[k-1], y[-1] = x[0]  (dt = 1 s)."""
+def first_order_lag(x: np.ndarray, tau: float, y0: Optional[float] = None) -> np.ndarray:
+    """y[k] = a*x[k] + (1-a)*y[k-1], y[-1] = y0 (default x[0], i.e. settled)  (dt = 1 s)."""
     a = 1.0 - np.exp(-1.0 / max(0.01, tau))
-    y, _ = lfilter([a], [1.0, -(1.0 - a)], x, zi=[(1.0 - a) * x[0]])
-    return y
+    start = float(x[0]) if y0 is None else float(y0)
+    y, _ = lfilter([a], [1.0, -(1.0 - a)], x, zi=[(1.0 - a) * start])
+    return np.asarray(y)
 
 
 def apply_dynamics(targets: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:

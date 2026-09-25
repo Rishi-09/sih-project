@@ -178,7 +178,7 @@ class JSBSimContextGenerator:
 
     def _init_jsbsim(self):
         try:
-            import jsbsim
+            import jsbsim  # pyright: ignore[reportMissingImports]  (optional FDM; falls back when absent)
             from pathlib import Path
             
             self.fdm = jsbsim.FGFDMExec(None)

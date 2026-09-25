@@ -2,8 +2,8 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Fleet Twin",
-  description: "Physics-hybrid engine digital twin: fleet health, diagnosis, survival and mission advisory",
+  title: "Piston Twin Console",
+  description: "AI-Enabled Digital Twin — MALE UAV Aero Piston Engine (Rotax 915 iS)",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

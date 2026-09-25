@@ -27,8 +27,12 @@ from ..physics import (FIT_CHANNELS, HF_HEALTHY, HF_NAMES, apply_dynamics, apply
                        nominal_targets, steady_state)
 
 PRIOR_SD = np.array([0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.08, 0.05])
-LOWER = np.array([0.40, 0.40, 0.20, 0.20, 0.20, 0.20, 0.90, 0.30])
-UPPER = np.array([1.10, 1.10, 1.10, 1.10, 1.10, 1.10, 3.50, 1.10])
+# Health factors only degrade: an engine cannot become better than its as-built state (build
+# scatter is L1's job, not the factors'). A 2% margin past healthy is left for estimation noise.
+# A wider upper bound let the fit "explain" a sensor reading high (EGT thermocouple drift) as a
+# cylinder burning better than new - cheap under the prior, and invisible as a deficit.
+LOWER = np.array([0.40, 0.40, 0.20, 0.20, 0.20, 0.20, 0.98, 0.30])
+UPPER = np.array([1.02, 1.02, 1.02, 1.02, 1.02, 1.02, 3.50, 1.02])
 SEG_TAIL_USE_S = 100  # use the last 100 s of each steady window (thermal lags fully settled)
 
 # Default segment-mean residual sigma per channel; replaced by calibrate_sigma() in the pipeline.
