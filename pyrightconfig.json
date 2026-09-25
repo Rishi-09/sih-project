@@ -1,0 +1,6 @@
+{
+  "include": ["twin2", "retribution"],
+  "exclude": ["**/node_modules", "**/__pycache__", "twin2/out"],
+  "extraPaths": ["retribution", "."],
+  "reportMissingModuleSource": "none"
+}

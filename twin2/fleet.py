@@ -12,7 +12,7 @@ length that ages the engine.
 """
 
 from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -46,7 +46,9 @@ def sortie_context(mission: dict, rng: np.random.Generator):
     """1 Hz flight context plus the steady segments M2 fits on."""
     alt_t = mission["alt_m"]
     holds = mission["holds"]  # throttle % of the four steady holds
-    legs = [("STARTUP", 30, 3, 0, 0), ("TAXI", 60, 12, 10, 0), ("TAKEOFF", 40, 100, 65, 0)]
+    # (phase, seconds, throttle %, IAS kt, altitude m or None = ramp)
+    legs: List[Tuple[str, int, float, float, Optional[float]]] = [
+        ("STARTUP", 30, 3, 0, 0), ("TAXI", 60, 12, 10, 0), ("TAKEOFF", 40, 100, 65, 0)]
     climb_s = int(alt_t / 6.0)
     legs.append(("CLIMB", climb_s, 90, 75, None))
     for i, h in enumerate(holds):
@@ -56,15 +58,13 @@ def sortie_context(mission: dict, rng: np.random.Generator):
 
     thr, alt, ias, ph, segs = [], [], [], [], []
     t = 0
-    cur_alt = 0.0
     for name, dur, u, v, a in legs:
         if name == "CLIMB":
             alts = np.linspace(0.0, alt_t, dur)
         elif name == "DESCENT":
             alts = np.linspace(alt_t, 0.0, dur)
         else:
-            alts = np.full(dur, float(a))
-        cur_alt = alts[-1]
+            alts = np.full(dur, float(a or 0.0))
         jitter = rng.normal(0, 0.4, dur).cumsum() * 0.05 if name in ("CRUISE", "LOITER") else np.zeros(dur)
         thr.append(np.clip(u + jitter, 0, 100))
         alt.append(alts)

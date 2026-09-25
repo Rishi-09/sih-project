@@ -24,7 +24,9 @@ from typing import Dict, Optional
 import numpy as np
 from scipy.signal import lfilter
 
-import twin2  # noqa: F401  (puts retribution/ on sys.path)
+from . import ensure_simulator_path
+
+ensure_simulator_path()
 from simulator.config import DEFAULT_CONFIG as CFG
 
 HF_NAMES = ["ve", "eta_turbo", "comb_1", "comb_2", "comb_3", "comb_4", "oil_res", "cool_eff"]
@@ -252,9 +254,9 @@ def apply_dynamics(targets: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
     return out
 
 
-def _pink(rng, n, std, phi=0.92):
+def _pink(rng: np.random.Generator, n: int, std: float, phi: float = 0.92) -> np.ndarray:
     e = rng.normal(0.0, std, n) * np.sqrt(1.0 - phi ** 2)
-    return lfilter([1.0], [1.0, -phi], e)
+    return np.asarray(lfilter([1.0], [1.0, -phi], e))
 
 
 def sensor_noise(rng: np.random.Generator, n: int, rpm: np.ndarray) -> Dict[str, np.ndarray]:

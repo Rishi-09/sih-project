@@ -2,7 +2,9 @@
 
 import numpy as np
 
-import twin2  # noqa: F401
+from twin2 import ensure_simulator_path
+
+ensure_simulator_path()
 from simulator.sensors import NominalSensorModel
 from twin2.physics import HF_HEALTHY, SENSOR_CHANNELS, apply_health, nominal_targets
 

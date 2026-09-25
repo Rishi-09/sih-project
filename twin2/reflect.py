@@ -2,6 +2,8 @@
 S2 auto-debrief and S3 calibration audit.
 """
 
+from typing import cast
+
 import numpy as np
 import pandas as pd
 
@@ -16,7 +18,8 @@ def calibration_table(pcomp: pd.DataFrame):
     df["bin"] = pd.cut(df.p, BINS, right=False)
     rows = []
     for b, g in df.groupby("bin", observed=True):
-        rows.append({"bin": f"{b.left:.3f}-{min(1.0, b.right):.3f}", "n": int(len(g)),
+        iv = cast(pd.Interval, b)
+        rows.append({"bin": f"{iv.left:.3f}-{min(1.0, iv.right):.3f}", "n": int(len(g)),
                      "predicted": float(g.p.mean()), "realized": float(g.completed.mean()),
                      "failures": int((1 - g.completed).sum())})
     brier = float(((df.p - df.completed) ** 2).mean())

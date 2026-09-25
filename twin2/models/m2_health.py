@@ -160,7 +160,6 @@ def calibrate_sigma(fleet_rows, engines_by_id, telemetry_fn, n: int = 40) -> np.
     Segment-mean residual scatter on HEALTHY sorties with the engine's true bias
     removed, i.e. the irreducible noise + lag floor the fit has to live with.
     """
-    from ..physics import HF_NAMES as _H  # noqa: F401
     res = []
     for _, row in fleet_rows.head(n).iterrows():
         eng = engines_by_id[row["engine_id"]]

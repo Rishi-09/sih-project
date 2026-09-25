@@ -56,7 +56,12 @@ def cylinder_trend(history: List[List[Optional[float]]], ages: List[float], wind
 THERMAL_CHANNELS = ["coolant_temp_c", "oil_temp_c", "cht_1", "cht_2", "cht_3", "cht_4",
                     "egt_1", "egt_2", "egt_3", "egt_4"]
 # Worst-case reference condition for "how long until this engine cannot do a hot-day take-off"
-HOT_TAKEOFF = dict(throttle_pct=100.0, alt_m=0.0, oat_c=40.0, ias_kt=65.0, phase="TAKEOFF")
+HOT_TAKEOFF_OAT_C = 40.0
+
+
+def hot_takeoff_margins(theta) -> Dict[str, float]:
+    """Steady-state margins at full power, sea level, 40 degC: the worst case a sortie starts with."""
+    return steady_margins(theta, 100.0, 0.0, HOT_TAKEOFF_OAT_C, 65.0, "TAKEOFF")
 
 
 def steady_margins(theta, throttle_pct, alt_m, oat_c, ias_kt=80.0, phase="CRUISE") -> Dict[str, float]:
@@ -110,8 +115,8 @@ def hours_to_thermal_limit(level, slope, horizon_h: float = 1500.0, step_h: floa
     for h in np.arange(0.0, horizon_h + step_h, step_h):
         th = level + slope * h
         th = np.clip(th, 0.2, 3.5)
-        m = steady_margins(th, **HOT_TAKEOFF)
-        worst = max(m, key=m.get)
+        m = hot_takeoff_margins(th)
+        worst = max(m, key=lambda c: m[c])
         if m[worst] >= 0:
             return float(h), worst
     return None, None

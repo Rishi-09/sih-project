@@ -27,7 +27,7 @@ from .ledger import Ledger
 from .models.m2_health import model_trace
 from .models.m4_m5_m6 import steady_margins
 from .models.m7_m8 import WeibullPH, advise
-from .physics import FIT_CHANNELS, HF_FAIL, HF_LABEL, HF_NAMES, REDLINE
+from .physics import HF_FAIL, HF_LABEL, HF_NAMES, REDLINE
 from .reflect import debrief_markdown
 from .run import SEED, _clean
 
@@ -101,8 +101,8 @@ def make_app() -> web.Application:
         eid = request.match_info["engine_id"]
         if eid not in st.engine_by_id:
             raise web.HTTPNotFound(reason=f"unknown engine {eid}")
-        recs = st.recs[st.recs.engine_id == eid].sort_values("sortie")
-        truth = st.truth[st.truth.engine_id == eid].sort_values("sortie")
+        recs = st.recs.loc[st.recs["engine_id"] == eid].sort_values("sortie")
+        truth = st.truth.loc[st.truth["engine_id"] == eid].sort_values("sortie")
         now = next(e for e in st.fleet["engines"] if e["engine_id"] == eid)
         x = np.array([now["deficit"], now["deficit_trend_100h"], 0.02])
         curve = st.model.survival_curve(now["age_h"], x, horizon_h=800, step_h=20)
@@ -169,7 +169,18 @@ def make_app() -> web.Application:
     return app
 
 
+def _port_free(port: int) -> bool:
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(("127.0.0.1", port)) != 0
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("TWIN2_PORT", "8100"))
+    if not _port_free(port):
+        print(f"Port {port} is already in use - another twin2 API is probably still running.\n"
+              f"Stop it, or pick another port:  TWIN2_PORT=8101 python -m twin2.api  "
+              f"(then set NEXT_PUBLIC_TWIN2_BASE=http://localhost:8101 for the web app).", file=sys.stderr)
+        sys.exit(1)
     print(f"twin2 API on http://localhost:{port}/api/twin2/fleet", file=sys.stderr)
     web.run_app(make_app(), port=port, print=None)

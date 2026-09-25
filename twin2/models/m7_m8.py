@@ -13,7 +13,7 @@ M8-lite  mission advisor: P_complete for a planned sortie, reliability-budget ve
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 from scipy.optimize import minimize
@@ -48,10 +48,12 @@ class WeibullPH:
         k, lam = np.exp(lk), np.exp(ll)
         return ((np.asarray(t1) / lam) ** k - (np.asarray(t0) / lam) ** k) * np.exp(np.asarray(x) @ b)
 
-    def p_survive(self, t0, t1, x, n_draws: int = 0, rng=None):
-        p = float(np.exp(-self.cum_hazard(t0, t1, x)))
-        if not n_draws:
-            return p
+    def p_survive(self, t0, t1, x) -> float:
+        return float(np.exp(-self.cum_hazard(t0, t1, x)))
+
+    def p_survive_band(self, t0, t1, x, n_draws: int = 200, rng=None) -> Tuple[float, float, float]:
+        """Point estimate plus an 80% band from parameter uncertainty (draws from the fit's covariance)."""
+        p = self.p_survive(t0, t1, x)
         rng = rng or np.random.default_rng(0)
         mean = np.concatenate([[self.log_k, self.log_lam], self.beta])
         draws = rng.multivariate_normal(mean, self.cov, size=n_draws, check_valid="ignore")
@@ -112,7 +114,7 @@ def mission_p(model: WeibullPH, engine: dict, hours: float, power: float, therma
     d_mid = engine["deficit"] + max(0.0, engine["deficit_trend_100h"]) * hours / 200.0
     x = covariate_row(d_mid, engine["deficit_trend_100h"], power)
     if draws:
-        p, lo, hi = model.p_survive(engine["age_h"], engine["age_h"] + hours, x, n_draws=draws)
+        p, lo, hi = model.p_survive_band(engine["age_h"], engine["age_h"] + hours, x, n_draws=draws)
     else:
         p = lo = hi = model.p_survive(engine["age_h"], engine["age_h"] + hours, x)
     if not thermal_ok:

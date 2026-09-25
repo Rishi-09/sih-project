@@ -30,7 +30,7 @@ from typing import Dict, List, Optional
 import numpy as np
 
 from ..physics import ADC_LSB, FIT_CHANNELS, health_deficit
-from .m2_health import HealthFit, fit, model_trace, predict, prepare
+from .m2_health import HealthFit, SortieSegments, fit, model_trace, predict, prepare
 
 LAMBDA = 40.0            # cost penalty for declaring a sensor fault (~6 sigma)
 MIN_SENSOR_Z = 5.0       # excluded channel must disagree by this many sigma on average
@@ -57,7 +57,7 @@ class TrustResult:
     attribution: str         # none | sensor | engine | both
     hypotheses: Dict[str, float] = field(default_factory=dict)  # label -> penalized cost
     trace_residual: Dict[str, List[float]] = field(default_factory=dict)  # downsampled, for the UI
-    seg: object = None       # the SortieSegments the decision was made on (reused by M4/M6)
+    seg: Optional[SortieSegments] = None  # the segments the decision was made on (reused by M4/M6)
 
     @property
     def distrusted(self) -> List[str]:

@@ -55,6 +55,7 @@ class Ledger:
             "VALUES (?,?,?,?,?,?,?)",
             (engine_id, int(sortie), model, kind, float(age_h),
              None if value is None else float(value), json.dumps(payload) if payload is not None else None))
+        assert cur.lastrowid is not None
         return int(cur.lastrowid)
 
     def resolve(self, prediction_id, realized=None, correct=None, payload=None):

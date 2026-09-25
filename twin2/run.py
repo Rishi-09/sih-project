@@ -10,7 +10,8 @@ One command, full loop:  python -m twin2.run
 
 import json
 import time
-from concurrent.futures import ProcessPoolExecutor
+import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict
 
 import numpy as np
@@ -21,10 +22,10 @@ from .fleet import build_fleet, engines_table, sortie_telemetry
 from .ledger import Ledger
 from .models.m1_trust import TrustResult, assess, shape_rules
 from .models.m2_health import EngineBaseline, calibrate_sigma, fit, model_trace, prepare
-from .models.m4_m5_m6 import (HOT_TAKEOFF, cylinder_split, cylinder_trend, diagnose, factor_trend,
+from .models.m4_m5_m6 import (cylinder_split, cylinder_trend, diagnose, factor_trend,
                               hours_to_failure_threshold, hours_to_thermal_limit, signature, steady_margins)
-from .models.m7_m8 import WeibullPH, advise, covariate_row, fit_weibull
-from .physics import FIT_CHANNELS, HF_FAIL, HF_HEALTHY, HF_NAMES, REDLINE, health_deficit, mismatch_spec
+from .models.m7_m8 import advise, covariate_row, fit_weibull
+from .physics import HF_FAIL, HF_HEALTHY, HF_NAMES, REDLINE, health_deficit, mismatch_spec
 from .reflect import calibration_table, debrief_markdown
 
 SEED = 7
@@ -58,6 +59,7 @@ def _process_engine(args):
             trust = TrustResult(faults, hf, False, "sensor" if faults else "none", seg=seg)
         else:
             trust = assess(df, baseline.bias, sigma, prior)
+            assert trust.seg is not None
             seg = trust.seg
         theta = trust.health.theta
         prior = theta
@@ -155,7 +157,7 @@ def validate(sorties: pd.DataFrame, recs: pd.DataFrame, pcomp: pd.DataFrame):
     engines, _ = build_fleet(SEED)
     per_kind = {}
     for e in engines:
-        er = m[m.engine_id == e.engine_id].sort_values("sortie")
+        er = m.loc[m["engine_id"] == e.engine_id].sort_values("sortie")
         for f in e.faults:
             i = HF_NAMES.index(f.factor)
             th_est = np.array(er.theta.tolist())[:, i]
@@ -204,22 +206,27 @@ def validate(sorties: pd.DataFrame, recs: pd.DataFrame, pcomp: pd.DataFrame):
 
 # ── main ───────────────────────────────────────────────────────────────────
 
-def _assess_fleet(engines, sorties, mismatch_rel: float):
+def _assess_fleet(engines, sorties, mismatch_rel: float, label: str = "assess"):
     """M1/M2/L1/M4/M5/M6 for every engine in parallel. Noise sigma is calibrated on healthy sorties first."""
     by_id = {e.engine_id: e for e in engines}
     healthy = sorties[(sorties.true_deficit_max < 0.06) & (sorties.sf_channel == "")]
     tel = (lambda row, eng: sortie_telemetry(row, eng, mismatch_spec(eng.engine_id, mismatch_rel)))         if mismatch_rel else sortie_telemetry
     sigma = calibrate_sigma(healthy.sample(60, random_state=0), by_id, tel, n=60)
+    results = []
     with ProcessPoolExecutor() as ex:
-        results = list(ex.map(_process_engine, [(e.engine_id, sigma, mismatch_rel) for e in engines]))
-    return pd.DataFrame([r for eng in results for r in eng]), sigma
+        futures = [ex.submit(_process_engine, (e.engine_id, sigma, mismatch_rel)) for e in engines]
+        for done, fut in enumerate(as_completed(futures), 1):
+            results.append(fut.result())
+            print(f"\r[{label}] engines {done}/{len(engines)}", end="", flush=True)
+    print()
+    recs = pd.DataFrame([r for eng in results for r in eng]).sort_values(["engine_id", "sortie"])
+    return recs.reset_index(drop=True), sigma
 
 
-def main(robustness: bool = True):
+def main(robustness: bool = False):
     t0 = time.time()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     engines, sorties = build_fleet(SEED)
-    by_id = {e.engine_id: e for e in engines}
     print(f"[fleet] {len(engines)} engines, {len(sorties)} sorties, "
           f"{int(sorties.failed.sum())} failures, {int((sorties.sf_channel != '').sum())} sensor faults")
 
@@ -324,9 +331,13 @@ def main(robustness: bool = True):
 
     # ── S2/S3 + validation ──
     val = validate(sorties, recs, pcomp)
+    robust_path = OUT_DIR / "robustness.json"
+    if not robustness and robust_path.exists():
+        val["robustness"] = json.loads(robust_path.read_text())  # last --robustness result, still valid for this seed
     if robustness:
         # Same pipeline, but every engine's true physics differs from the twin's (see physics.mismatch_spec)
-        rrecs, _ = _assess_fleet(engines, sorties, mismatch_rel=MISMATCH_REL)
+        print(f"[robustness] re-assessing the fleet with physics coefficients off by +-{100 * MISMATCH_REL:.0f}%")
+        rrecs, _ = _assess_fleet(engines, sorties, mismatch_rel=MISMATCH_REL, label="robustness")
         rv = validate(sorties, rrecs, pcomp)
         val["robustness"] = {
             "coef_error": MISMATCH_REL,
@@ -339,6 +350,7 @@ def main(robustness: bool = True):
             "slow_kinds_before_limit": rv["slow_faults"]["kinds_detected_before_limit"],
             "slow_kinds_present": rv["slow_faults"]["kinds_present"],
         }
+        robust_path.write_text(json.dumps(val["robustness"], indent=1))
     cal = calibration_table(pcomp)
     val["ledger"] = ledger.stats()
     demo_debrief = debrief_markdown(sorties, recs, "UAV-11", 19, ledger)
@@ -413,5 +425,6 @@ def _print_report(val, demo, secs):
 
 
 if __name__ == "__main__":
-    import sys
-    main(robustness="--no-robustness" not in sys.argv)
+    # The robustness pass re-assesses the whole fleet a second time; opt in with --robustness.
+    # Its result is cached in out/robustness.json and reused by later runs.
+    main(robustness="--robustness" in sys.argv)
