@@ -55,3 +55,7 @@ retribution/ML/data/processed/features_v3_*.npz
 __pycache__/
 *.py[cod]
 *$py.class
+
+# twin2 generated outputs (python -m twin2.run)
+twin2/out/
+__pycache__/

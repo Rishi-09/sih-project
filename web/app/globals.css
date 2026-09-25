@@ -30,6 +30,7 @@ body {
 a { color: inherit; text-decoration: none; }
 button { font-family: inherit; cursor: pointer; }
 code, .mono { font-family: var(--font-mono); }
+svg { display: block; flex-shrink: 0; }
 
 /* ---- fleet page ---- */
 .fleet { max-width: 1040px; margin: 0 auto; padding: 40px 20px; }
@@ -39,7 +40,7 @@ code, .mono { font-family: var(--font-mono); }
 .stats-dot { color: var(--rule); }
 .stats-live { color: var(--ok); font-weight: 600; }
 .stats-hint { font-size: 12px; color: var(--accent); }
-.add-engine-btn { font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 6px; }
+.add-engine-btn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 6px; }
 
 .fleet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
 .fleet-card-wrapper { position: relative; }
@@ -52,13 +53,14 @@ code, .mono { font-family: var(--font-mono); }
 
 .fleet-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .tail-section { display: flex; align-items: center; gap: 8px; }
-.aircraft-icon { font-size: 14px; color: var(--accent); }
+.aircraft-icon { color: var(--accent); }
 .fleet-card .tail { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
 
 .fleet-card-actions { display: flex; align-items: center; gap: 6px; }
 .btn-card-delete {
+  display: inline-flex; align-items: center; justify-content: center;
   background: none; border: 1px solid transparent; color: var(--ink-3);
-  font-size: 16px; line-height: 1; border-radius: 4px; padding: 2px 6px; cursor: pointer;
+  line-height: 1; border-radius: 4px; padding: 4px; cursor: pointer;
   transition: all 0.15s ease;
 }
 .btn-card-delete:hover { color: var(--critical); background: var(--critical-soft); border-color: var(--critical); }
@@ -81,13 +83,13 @@ code, .mono { font-family: var(--font-mono); }
 }
 
 .fleet-card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: auto; font-size: 12px; }
-.btn-link { color: var(--accent); font-weight: 500; }
-.twin3d-pill {
-  font-family: var(--font-mono); font-size: 11px; color: var(--accent);
-  background: var(--accent-soft); padding: 3px 8px; border-radius: 4px;
-  border: 1px solid rgba(84, 198, 209, 0.2); transition: all 0.15s ease;
+.btn-link { display: inline-flex; align-items: center; gap: 5px; color: var(--accent); font-weight: 600; }
+.console-pill {
+  font-family: var(--font-mono); font-size: 11px; color: var(--ink-3);
+  background: var(--surface-2); padding: 3px 8px; border-radius: 4px;
+  border: 1px solid var(--rule); transition: all 0.15s ease;
 }
-.twin3d-pill:hover { background: var(--accent); color: #0b1519; }
+.console-pill:hover { border-color: var(--ink-2); color: var(--ink-2); }
 
 /* Add Card */
 .add-card {
@@ -99,7 +101,7 @@ code, .mono { font-family: var(--font-mono); }
 .add-icon-circle {
   width: 38px; height: 38px; border-radius: 50%; background: var(--surface-2);
   border: 1px solid var(--rule); display: flex; align-items: center; justify-content: center;
-  font-size: 22px; color: var(--accent); margin-bottom: 10px; transition: all 0.2s ease;
+  color: var(--accent); margin-bottom: 10px; transition: all 0.2s ease;
 }
 .add-card:hover .add-icon-circle { background: var(--accent-soft); border-color: var(--accent); }
 .add-title { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
@@ -118,7 +120,7 @@ code, .mono { font-family: var(--font-mono); }
 }
 .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
 .modal-header h2 { font-size: 18px; font-weight: 700; margin: 0; }
-.modal-close { background: none; border: none; color: var(--ink-3); font-size: 22px; line-height: 1; cursor: pointer; }
+.modal-close { display: inline-flex; align-items: center; justify-content: center; background: none; border: none; color: var(--ink-3); line-height: 1; cursor: pointer; padding: 2px; }
 .modal-close:hover { color: var(--ink); }
 .modal-description { font-size: 13px; color: var(--ink-3); line-height: 1.5; margin-bottom: 18px; }
 

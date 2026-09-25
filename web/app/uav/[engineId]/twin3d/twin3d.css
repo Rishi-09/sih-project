@@ -80,6 +80,7 @@
   flex: 1;
   overflow: hidden;
   background: #080d10;
+  transition: grid-template-columns 0.18s ease;
 }
 
 .ide-panel {
@@ -90,6 +91,35 @@
   overflow: hidden;
   position: relative;
 }
+
+.ide-panel.collapsed {
+  min-width: 0;
+}
+
+.ide-panel.collapsed .panel-tab-header {
+  justify-content: center;
+  padding: 0;
+}
+
+.panel-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--ink-3);
+  padding: 4px;
+  border-radius: 3px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.panel-collapse-btn:hover {
+  color: var(--accent);
+  background: var(--surface-2);
+}
+
+.ide-panel-left .panel-tab-header { justify-content: space-between; }
+.ide-panel-right .panel-tab-header { justify-content: space-between; flex-direction: row-reverse; }
 
 .ide-panel-center {
   background: #060a0d;

@@ -1,5 +1,6 @@
 import { EngineSummary } from "@/lib/types";
 import { API_BASE } from "@/lib/api";
+import Link from "next/link";
 import { FleetManager } from "@/components/FleetManager";
 
 async function getEngines(): Promise<EngineSummary[]> {
@@ -16,6 +17,9 @@ export default async function FleetPage() {
   const engines = await getEngines();
   return (
     <main className="fleet">
+      <Link href="/twin2" style={{ display: "block", marginBottom: 20, padding: "10px 14px", border: "1px solid var(--accent)", borderRadius: 8, background: "var(--accent-soft)", color: "var(--accent)", fontWeight: 600, fontSize: 13 }}>
+        Fleet twin: health factors, diagnosis, survival and mission advisory (M1–M8) →
+      </Link>
       <FleetManager initialEngines={engines} />
     </main>
   );

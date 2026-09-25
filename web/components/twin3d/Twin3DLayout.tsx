@@ -1,6 +1,7 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
+import { IconChevronLeft, IconChevronRight } from "@/components/Icons";
 
 interface Props {
   leftPanel: ReactNode;
@@ -9,19 +10,38 @@ interface Props {
   bottomLog: ReactNode;
 }
 
+// The hologram viewport is the reason this page exists; the telemetry and ML
+// panels either side are supporting evidence. Letting either be collapsed
+// gives the canvas the full width instead of it being permanently squeezed
+// into a fixed 1fr strip between two fixed-width panels.
 export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }: Props) {
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+
   return (
     <div className="twin3d-ide-container">
-      <div className="ide-workspace">
-        {/* Left Simulator Telemetry Panel */}
-        <aside className="ide-panel ide-panel-left">
+      <div
+        className="ide-workspace"
+        style={{
+          gridTemplateColumns: `${leftCollapsed ? "36px" : "280px"} 1fr ${rightCollapsed ? "36px" : "310px"}`,
+        }}
+      >
+        <aside className={`ide-panel ide-panel-left ${leftCollapsed ? "collapsed" : ""}`}>
           <div className="panel-tab-header">
-            <span className="tab-active">SIMULATOR TELEMETRY</span>
+            {!leftCollapsed && <span className="tab-active">SIMULATOR TELEMETRY</span>}
+            <button
+              type="button"
+              className="panel-collapse-btn"
+              onClick={() => setLeftCollapsed((v) => !v)}
+              title={leftCollapsed ? "Expand telemetry panel" : "Collapse telemetry panel"}
+              aria-expanded={!leftCollapsed}
+            >
+              {leftCollapsed ? <IconChevronRight width={13} height={13} /> : <IconChevronLeft width={13} height={13} />}
+            </button>
           </div>
-          <div className="panel-content">{leftPanel}</div>
+          {!leftCollapsed && <div className="panel-content">{leftPanel}</div>}
         </aside>
 
-        {/* Center 3D Hologram Viewport */}
         <main className="ide-panel ide-panel-center">
           <div className="panel-tab-header">
             <span className="tab-active">3D HOLOGRAPHIC DIGITAL TWIN</span>
@@ -30,19 +50,24 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
           <div className="canvas-wrapper-container">{centerCanvas}</div>
         </main>
 
-        {/* Right ML Predictions Panel */}
-        <aside className="ide-panel ide-panel-right">
+        <aside className={`ide-panel ide-panel-right ${rightCollapsed ? "collapsed" : ""}`}>
           <div className="panel-tab-header">
-            <span className="tab-active">AI / ML PREDICTOR</span>
+            <button
+              type="button"
+              className="panel-collapse-btn"
+              onClick={() => setRightCollapsed((v) => !v)}
+              title={rightCollapsed ? "Expand AI/ML panel" : "Collapse AI/ML panel"}
+              aria-expanded={!rightCollapsed}
+            >
+              {rightCollapsed ? <IconChevronLeft width={13} height={13} /> : <IconChevronRight width={13} height={13} />}
+            </button>
+            {!rightCollapsed && <span className="tab-active">AI / ML PREDICTOR</span>}
           </div>
-          <div className="panel-content">{rightPanel}</div>
+          {!rightCollapsed && <div className="panel-content">{rightPanel}</div>}
         </aside>
       </div>
 
-      {/* Bottom Integrated Terminal / Log Panel */}
-      <footer className="ide-panel ide-panel-bottom">
-        {bottomLog}
-      </footer>
+      <footer className="ide-panel ide-panel-bottom">{bottomLog}</footer>
     </div>
   );
 }
