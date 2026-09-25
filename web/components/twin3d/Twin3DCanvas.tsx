@@ -147,7 +147,7 @@ export function Twin3DCanvas({ frame, autoRotate = true, isFlightActive = false 
     scene.add(engineModel.group);
     engineModelRef.current = engineModel;
 
-    // 7b. Complete 3D UAV Airframe Model (visible by default)
+    // 7b. Complete 3D UAV Airframe Model (visible by default on initial open)
     const airframeModel = new AirframeModel();
     airframeModel.setVisible(true);
     scene.add(airframeModel.group);
@@ -495,13 +495,13 @@ export function Twin3DCanvas({ frame, autoRotate = true, isFlightActive = false 
               onClick={() => handleModelViewChange("airframe")}
               title="Inspect Complete Aircraft Airframe"
             >
-              COMPLETE AIRFRAME
+              UAV AIRFRAME
             </button>
             <button
               type="button"
               className={`btn-hud-mode btn-hud-asset ${modelView === "engine" ? "active" : ""}`}
               onClick={() => handleModelViewChange("engine")}
-              title="Inspect Rotax 915 iS Engine Components"
+              title="Inspect Rotax 915 iS Propulsion Twin"
             >
               ENGINE TWIN
             </button>

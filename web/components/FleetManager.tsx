@@ -117,7 +117,9 @@ export function FleetManager({ initialEngines }: Props) {
     <div className="fleet-container">
       <header className="fleet-header">
         <div className="fleet-header-main">
-          <img src="/drdo-logo.png" alt="DRDO Emblem" className="drdo-fleet-logo" />
+          <Link href="/" className="drdo-fleet-logo-link" title="DRDO Fleet Command Overview">
+            <img src="/drdo-logo.png" alt="DRDO Emblem" className="drdo-fleet-logo" />
+          </Link>
           <div>
             <h1>UAV FLEET COMMAND</h1>
             <div className="fleet-stats">

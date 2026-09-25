@@ -43,7 +43,7 @@ export default function Twin3DPage() {
         if (cancelled) return;
         const e = engines.find((x) => x.id === engineId) ?? null;
         setEngine(e);
-        // Do NOT auto-start the flight. Keep aircraft parked on launch pad until user clicks "Start Flight".
+        if (e?.latestRunStatus === "live" || e?.latestRunStatus === "degraded") { setRunId(e.latestRunId); }
       })
       .finally(() => !cancelled && setLoadingEngine(false));
 
@@ -105,9 +105,15 @@ export default function Twin3DPage() {
   return (
     <div className="twin3d-page">
       {/* Top IDE Bar */}
-      <header className="twin3d-topbar">
-        <Link href={`/uav/${engineId}`} className="back-btn">
-          ← Console
+            <header className="twin3d-topbar">
+        <Link href="/" className="drdo-topbar-link" title="Return to DRDO Fleet Command">
+          <img src="/drdo-logo.png" alt="DRDO Emblem" className="drdo-topbar-img" />
+        </Link>
+        <Link href="/" className="back-btn" title="Back to Fleet Overview">
+          ← Fleet
+        </Link>
+        <Link href={`/uav/${engineId}`} className="back-btn" title="Open 2D Telemetry Console">
+          Console
         </Link>
         <div className="topbar-tail">
           <span>{engine.tail}</span>
@@ -123,12 +129,20 @@ export default function Twin3DPage() {
         <div className="topbar-spacer" />
 
         {/* Fault state stays visible in the header even with the strip closed */}
+        {/* Status pill showing either Nominal or Active Faults */}
+        <div className={`status-pill ${injected.length > 0 ? "status-pill-fault" : "status-pill-nominal"}`}>
+          <span className="status-pill-dot" />
+          <span>{injected.length > 0 ? `${injected.length} Active Fault${injected.length > 1 ? "s" : ""}` : "System Nominal"}</span>
+        </div>
+
         <button
-          className={`faultbar-toggle ${injected.length > 0 ? "armed" : ""}`}
+          type="button"
+          className="btn-scenario-toggle"
           onClick={() => setShowFaultBar((v) => !v)}
           aria-expanded={showFaultBar}
+          title="Toggle sortie mission profile and fault injection controls"
         >
-          {injected.length > 0 ? `${injected.length} Fault${injected.length > 1 ? "s" : ""}` : "Nominal"}
+          <span>⚡ Mission Controls</span>
           <span className="faultbar-caret">{showFaultBar ? "▴" : "▾"}</span>
         </button>
 

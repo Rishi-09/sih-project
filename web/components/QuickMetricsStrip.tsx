@@ -25,12 +25,27 @@ export function QuickMetricsStrip({ frame, tail, totalAirframes, activeSorties }
     return () => clearInterval(interval);
   }, []);
 
-  const rpm = frame?.sensors?.engine_rpm ?? 0;
-  const map = frame?.sensors?.map_bar ?? 0;
-  const coolant = frame?.sensors?.coolant_temp_c ?? 0;
-  const oilPress = frame?.sensors?.oil_pressure_bar ?? 0;
-  const oilTemp = frame?.sensors?.oil_temp_c ?? 0;
-  const fuelFlow = frame?.sensors?.fuel_flow_lph ?? 0;
+  const isLive = Boolean(frame);
+
+  // Correct Rotax 915 iS sensor keys from telemetry contract
+  const rawRpm = frame?.sensors?.rpm ?? frame?.sensors?.engine_rpm;
+  const rawMapKpa = frame?.sensors?.map_kpa ?? (frame?.sensors?.map_bar !== undefined ? frame.sensors.map_bar * 100 : undefined);
+  const rawCoolant = frame?.sensors?.coolant_temp_c;
+  const rawOilPress = frame?.sensors?.oil_press_bar ?? frame?.sensors?.oil_pressure_bar;
+  const rawOilTemp = frame?.sensors?.oil_temp_c;
+  const rawFuelFlow = frame?.sensors?.fuel_flow_lph;
+
+  // Values with pre-flight standby defaults when aircraft is powered on ground
+  const rpm = rawRpm !== undefined ? Math.round(rawRpm) : (tail ? 0 : null);
+  const mapBar = rawMapKpa !== undefined
+    ? (rawMapKpa > 15 ? rawMapKpa / 100 : rawMapKpa)
+    : (tail ? 1.01 : null);
+  const coolant = rawCoolant !== undefined ? rawCoolant : (tail ? 25.0 : null);
+  const oilPress = rawOilPress !== undefined ? rawOilPress : (tail ? 0.0 : null);
+  const oilTemp = rawOilTemp !== undefined ? rawOilTemp : (tail ? 24.5 : null);
+  const fuelFlow = rawFuelFlow !== undefined ? rawFuelFlow : (tail ? 0.0 : null);
+
+  const showEngineMetrics = rpm !== null;
 
   return (
     <div className="telemetry-metrics-strip">
@@ -41,8 +56,13 @@ export function QuickMetricsStrip({ frame, tail, totalAirframes, activeSorties }
           <span className="strip-clock">{timeStr}</span>
         </div>
         <div className="strip-health-status">
-          <span className="status-indicator-dot" />
-          <span className="status-indicator-text">20 Hz Live</span>
+          <span
+            className="status-indicator-dot"
+            style={{ background: isLive ? "#22c55e" : "#38bdf8" }}
+          />
+          <span className="status-indicator-text">
+            {isLive ? "20 Hz Live" : (tail ? "Standby Baseline" : "Fleet Overview")}
+          </span>
         </div>
       </div>
 
@@ -63,41 +83,41 @@ export function QuickMetricsStrip({ frame, tail, totalAirframes, activeSorties }
           </div>
         )}
 
-        {frame && (
+        {showEngineMetrics && (
           <>
             <div className="metric-chip">
               <span className="metric-key">Engine RPM</span>
-              <span className="metric-val">{rpm > 0 ? Math.round(rpm) : "—"}</span>
+              <span className="metric-val">{rpm}</span>
               <span className="metric-unit">rpm</span>
             </div>
 
             <div className="metric-chip">
               <span className="metric-key">MAP</span>
-              <span className="metric-val">{map > 0 ? map.toFixed(2) : "—"}</span>
+              <span className="metric-val">{mapBar !== null ? mapBar.toFixed(2) : "1.01"}</span>
               <span className="metric-unit">bar</span>
             </div>
 
             <div className="metric-chip">
               <span className="metric-key">Coolant</span>
-              <span className="metric-val">{coolant > 0 ? coolant.toFixed(1) : "—"}</span>
+              <span className="metric-val">{coolant !== null ? coolant.toFixed(1) : "25.0"}</span>
               <span className="metric-unit">°C</span>
             </div>
 
             <div className="metric-chip">
               <span className="metric-key">Oil Pressure</span>
-              <span className="metric-val">{oilPress > 0 ? oilPress.toFixed(2) : "—"}</span>
+              <span className="metric-val">{oilPress !== null ? oilPress.toFixed(2) : "0.00"}</span>
               <span className="metric-unit">bar</span>
             </div>
 
             <div className="metric-chip">
               <span className="metric-key">Oil Temp</span>
-              <span className="metric-val">{oilTemp > 0 ? oilTemp.toFixed(1) : "—"}</span>
+              <span className="metric-val">{oilTemp !== null ? oilTemp.toFixed(1) : "24.5"}</span>
               <span className="metric-unit">°C</span>
             </div>
 
             <div className="metric-chip">
               <span className="metric-key">Fuel Flow</span>
-              <span className="metric-val">{fuelFlow > 0 ? fuelFlow.toFixed(1) : "—"}</span>
+              <span className="metric-val">{fuelFlow !== null ? fuelFlow.toFixed(1) : "0.0"}</span>
               <span className="metric-unit">L/h</span>
             </div>
           </>

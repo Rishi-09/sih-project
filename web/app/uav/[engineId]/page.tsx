@@ -96,6 +96,9 @@ export default function ConsolePage() {
   return (
     <main className="console">
       <header className="console-header">
+        <Link href="/" className="drdo-topbar-link" title="Return to DRDO Fleet Command">
+          <img src="/drdo-logo.png" alt="DRDO Emblem" className="drdo-topbar-img" />
+        </Link>
         <Link href="/" className="back">
           ← Fleet
         </Link>
@@ -120,8 +123,8 @@ export default function ConsolePage() {
             End Sortie
           </button>
         )}
-        <Link href={`/uav/${engineId}/twin3d`} className="btn btn-quiet">
-          3D Twin ◈
+        <Link href={`/uav/${engineId}/twin3d`} className="btn btn-twin3d-nav" title="Switch to 3D Digital Twin View">
+          ⬢ 3D Digital Twin
         </Link>
       </header>
 
