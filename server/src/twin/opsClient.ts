@@ -412,6 +412,9 @@ export class OpsClient {
    */
   private currentLabel(ml: OpsMlResult | null): string {
     if (!this.faulted || !ml?.probabilities) return "healthy";
+    // The live twin decides its own headline (an engine change outranks a distrusted
+    // sensor, which is still reported in sensorFault). Use it whenever it names a fault.
+    if (ml.twin && ml.fault_type !== "healthy" && ml.fault_type in ml.probabilities) return ml.fault_type;
     let best: string | null = null;
     let bestP = -1;
     for (const [k, v] of Object.entries(ml.probabilities)) {

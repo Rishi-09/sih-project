@@ -44,11 +44,12 @@ SCHEDULE = [
 
 
 def fly(fault: Optional[str] = None, severity: float = 0.6, seed: int = 7, end_s: float = FLIGHT_END_S,
-        on_assess=None) -> List[dict]:
+        on_assess=None, inject_at: float = INJECT_AT_S, events=None) -> List[dict]:
+    """events: [(t, fault_id | "clear", severity)] - overrides fault/inject_at when given."""
     sim = OpsEngineSim(seed=seed)
     twin = LiveTwin()
     step_i, results, last_assess = 0, [], 0.0
-    injected = False
+    pending = list(events) if events is not None else ([(inject_at, fault, severity)] if fault else [])
     while True:
         frame = sim.step(dt=DT)
         t, alt = frame["t_s"], frame["alt_m"]
@@ -62,9 +63,12 @@ def fly(fault: Optional[str] = None, severity: float = 0.6, seed: int = 7, end_s
                     break
             sim.set_player_input(inp)
             step_i += 1
-        if fault and not injected and t >= INJECT_AT_S:
-            sim.inject_fault(fault, severity)
-            injected = True
+        while pending and t >= pending[0][0]:
+            _, what, sev = pending.pop(0)
+            if what == "clear":
+                sim.clear_faults()
+            else:
+                sim.inject_fault(what, sev)
         twin.observe(frame)
         if t - last_assess >= ASSESS_EVERY_S:
             last_assess = t
@@ -86,9 +90,47 @@ def _verdict(r: dict) -> str:
     return r["fault_type"]
 
 
-def check_fault(fault: str, severity: float) -> dict:
-    res = fly(fault, severity)
-    after = [r for r in res if r["_t"] >= INJECT_AT_S]
+# The server e2e scenario (tools/e2e_live.mjs), replayed headlessly: faults injected during
+# the climb and back to back, each judged within the time the console gives it.
+SEQUENCE = [
+    (90.0, "turbo_degradation", 0.6, "turbo_degradation", 200.0),
+    (290.0, "clear", 0.0, "healthy", 150.0),
+    (440.0, "sensor_bias_oilpress", 1.0, "sensor:oil_press_bar", 200.0),
+    (640.0, "clear", 0.0, "healthy", 150.0),
+    (790.0, "weak_cylinder_cyl2", 0.7, "weak_cylinder_cyl2", 200.0),
+]
+
+
+def _expectation(expect: str):
+    """Predicate on an assessment for 'healthy', 'sensor:<channel>' or an engine fault id."""
+    if expect == "healthy":
+        return lambda r: r["fault_type"] == "healthy" and not r["twin"]["sensor_faults"]
+    if expect.startswith("sensor:"):
+        ch = expect.split(":")[1]
+        return lambda r: any(x["channel"] == ch for x in r["twin"]["sensor_faults"]) and r["health_score"] >= 90
+    return lambda r: r["fault_type"] == expect
+
+
+def check_sequence() -> bool:
+    events = [(t, f, s) for t, f, s, _, _ in SEQUENCE]
+    res = fly(events=events, end_s=SEQUENCE[-1][0] + SEQUENCE[-1][4] + 5)
+    ok_all = True
+    for t, f, _, expect, within in SEQUENCE:
+        window = [r for r in res if t <= r["_t"] <= t + within]
+        ok = _expectation(expect)
+        hit = next((r for r in window if ok(r)), None)
+        # once reached, the verdict must hold to the end of this step
+        held = hit is not None and all(ok(r) for r in window if r["_t"] >= hit["_t"] + 20)
+        ok_all &= held
+        seen = sorted({_verdict(r) for r in window})
+        print(f"{'PASS' if held else 'FAIL'}  t={t:4.0f} {f:22} -> expect {expect:24} "
+              f"{'reached +' + str(round(hit['_t'] - t)) + 's' if hit else 'never reached':16} seen={seen}")
+    return ok_all
+
+
+def check_fault(fault: str, severity: float, inject_at: float = INJECT_AT_S) -> dict:
+    res = fly(fault, severity, inject_at=inject_at)
+    after = [r for r in res if r["_t"] >= inject_at]
     if fault in SENSOR_FAULTS:
         ch = SENSOR_FAULTS[fault]["channel"]
 
@@ -102,7 +144,7 @@ def check_fault(fault: str, severity: float) -> dict:
     final = tail[-1] if tail else None
     return {
         "fault": fault,
-        "detected_after_s": None if hit_t is None else round(hit_t - INJECT_AT_S),
+        "detected_after_s": None if hit_t is None else round(hit_t - inject_at),
         "stable": bool(tail) and all(ok(r) for r in tail),
         "final": _verdict(final) if final else "-",
         "top3": [c["id"] for c in final["twin"]["causes"][:3]] if final else [],
@@ -141,10 +183,15 @@ def main():
     ap.add_argument("--calibrate", action="store_true")
     ap.add_argument("--only")
     ap.add_argument("--severity", type=float, default=0.6)
+    ap.add_argument("--inject-at", type=float, default=INJECT_AT_S,
+                    help="simulated second to inject at (default: cruise; ~90 is mid-climb)")
+    ap.add_argument("--sequence", action="store_true", help="replay the server e2e scenario")
     a = ap.parse_args()
     if a.calibrate:
         calibrate()
         return
+    if a.sequence:
+        sys.exit(0 if check_sequence() else 1)
     t0 = time.time()
     faults = [a.only] if a.only else [*ENGINE_FAULTS, *SENSOR_FAULTS]
     if not a.only:
@@ -153,7 +200,7 @@ def main():
               f"(median unexplained residual {h['median_unexplained']})")
     rows = []
     for f in faults:
-        r = check_fault(f, a.severity)
+        r = check_fault(f, a.severity, a.inject_at)
         rows.append(r)
         mark = "PASS" if r["stable"] else "FAIL"
         print(f"{mark}  {f:24} detected +{r['detected_after_s']}s  final={r['final']:34} "

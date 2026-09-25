@@ -37,7 +37,8 @@ from .models.m4_m5_m6 import (THERMAL_CHANNELS, diagnose, hot_takeoff_margins, t
 from .physics import (FIT_CHANNELS, HF_FAIL, HF_HEALTHY, HF_LABEL, HF_NAMES, NON_THERMAL_TAU, THERMAL_TAU,
                       apply_health, first_order_lag, health_deficit, nominal_targets)
 
-WINDOW_S = 240          # rolling window the fit sees
+WINDOW_S = 90           # rolling window the fit sees. Health is held constant across it, so it must be
+                        # short enough that a fault that just developed soon fills it (the fault ramp is 30 s)
 MIN_WINDOW_S = 75       # airborne seconds needed before the first assessment
 BURN_S = 20             # fast lags start at their target; give them this long before scoring
 BLOCK_S = 15            # residuals are averaged into blocks of this many seconds
@@ -58,13 +59,33 @@ BLOCK_FLOOR = {"rpm": 4.0, "vib_rms_g": 0.007, "egt_1": 1.9, "egt_2": 1.9, "egt_
                "fuel_flow_lph": 0.12}
 
 CANDIDATE_Z = 3.0
+ENGINE_FLAG = 0.15      # a factor this far toward failure is an engine change
+RECENT_BLOCKS = 3       # the "now" part of the window (45 s) used to veto stale conclusions
+FRESH_Q_LONG = 2.0      # long-window fit this poor ...
+FRESH_Q_RECENT = 1.6    # ... while the recent blocks fit this well = the engine just changed
+SENSOR_CONFIRM_S = 60.0 # a residual-based sensor call must persist this long before it is reported: an
+                        # engine fault ramping in (30 s) can mimic one until the recent 45 s are clear of
+                        # the ramp, i.e. ~60 s after the first misfit. Shape-rule faults are immediate.
 ANOMALY_Q = 4.0         # mean squared block z the best explanation leaves behind
+OCCAM_W = 40.0          # cost per unit of claimed health deficit, measured from HEALTHY
 
 
 def _lambda(n_blocks: int) -> float:
     """Cost of declaring a sensor fault. Excluding a channel drops ~n_blocks of chi-square even when
     the channel is fine, so the penalty must exceed that plus a real margin."""
     return 40.0 + 2.0 * n_blocks
+
+
+def _occam(theta) -> float:
+    """Every hypothesis pays for the engine damage it claims. The fit's own prior anchors to the previous
+    estimate, so without this "the oil-temperature sensor lies AND the oil circuit is restricted" could tie
+    with the simpler "the oil-pressure sensor lies" - one fault should beat two."""
+    return OCCAM_W * float(np.sum(health_deficit(theta)))
+
+
+def _lambda_recent(n_blocks: int) -> float:
+    """Same idea over the recent blocks only: fewer residuals, so a smaller penalty."""
+    return 15.0 + 2.0 * n_blocks
 
 
 class LiveTwin:
@@ -77,6 +98,8 @@ class LiveTwin:
         self._last_t = -math.inf
         self.prior = HF_HEALTHY.copy()
         self.n_assessments = 0
+        self._sensor_candidate: Optional[str] = None  # residual-based sensor call awaiting confirmation
+        self._candidate_since = 0.0
 
     def observe(self, frame: dict):
         """Called for every simulator frame; keeps one row per simulated second."""
@@ -122,14 +145,30 @@ class LiveTwin:
                     out[ch] = first_order_lag(tgt[ch], NON_THERMAL_TAU[ch])
             return out
 
-        # M1 layer 1: shape rules on the raw trace
-        faults, masks, excluded = shape_rules(w, trace(self.prior), noise_sigma=sig_1hz)
         n = len(w)
-        for f in faults:  # shape-rule onsets are row indices; report simulated seconds
-            if f.onset_s is not None:
-                f.onset_s = int(w["t_s"].iloc[min(f.onset_s, n - 1)])
         starts = list(range(BURN_S, n - 4, BLOCK_S))
         blocks = [(a, min(n, a + BLOCK_S)) for a in starts if min(n, a + BLOCK_S) - a >= 5]
+        recent = list(range(max(0, len(blocks) - RECENT_BLOCKS), len(blocks)))
+        recent_row = blocks[recent[0]][0] if blocks else n
+
+        # M1 layer 1: shape rules on the raw trace. Corrupt samples stay masked out of the fit for as
+        # long as they are in the window, but a fault is only ACTIVE if its evidence is recent - a
+        # repaired sensor stops being reported once it has behaved for RECENT_BLOCKS blocks.
+        all_faults, masks, all_excluded = shape_rules(w, trace(self.prior), noise_sigma=sig_1hz)
+        faults, excluded = [], []
+        for f in all_faults:
+            v = obs[f.channel]
+            active = (bool(np.ptp(v[-20:]) == 0.0) if f.mode == "stuck"
+                      else bool(masks.get(f.channel, np.zeros(n, bool))[recent_row:].any()))
+            if f.onset_s is not None:  # shape-rule onsets are row indices; report simulated seconds
+                f.onset_s = int(w["t_s"].iloc[min(f.onset_s, n - 1)])
+            if active:
+                faults.append(f)
+                if f.channel in all_excluded:
+                    excluded.append(f.channel)
+            elif f.channel in all_excluded:  # frozen, then released: drop the frozen stretch from the fit
+                same = np.concatenate([[False], np.diff(v) == 0.0])
+                masks[f.channel] = masks.get(f.channel, np.zeros(n, bool)) | same
         good = {ch: ~masks[ch] if ch in masks else np.ones(n, bool) for ch in FIT_CHANNELS}
 
         def block_z(theta) -> np.ndarray:
@@ -143,11 +182,14 @@ class LiveTwin:
                         z[i, j] = r[a:b][m].mean() / sigma[j]
             return z
 
-        def fit(exclude: Sequence[str]):
+        def fit(exclude: Sequence[str], rows: Optional[List[int]] = None):
+            """Health fit on all blocks, or only `rows` (the recent part). Returns theta, sd, cost, z."""
             use_cols = np.array([ch not in exclude for ch in FIT_CHANNELS])
+            use_rows = np.zeros(len(blocks), bool)
+            use_rows[rows if rows is not None else slice(None)] = True
 
             def resid(theta):
-                z = block_z(theta)[:, use_cols]
+                z = block_z(theta)[np.ix_(use_rows, use_cols)]
                 z = z[~np.isnan(z)]
                 return np.concatenate([z, (theta - self.prior) / PRIOR_SD])
 
@@ -159,11 +201,17 @@ class LiveTwin:
                 sd = PRIOR_SD.copy()
             z = block_z(sol.x)
             z[:, ~use_cols] = np.nan
+            z[~use_rows, :] = np.nan
             return sol.x, sd, float(2 * sol.cost), z
+
+        def q(z) -> float:
+            zz = z[~np.isnan(z)]
+            return float(np.mean(zz ** 2)) if zz.size else 0.0
 
         # M1 layer 2 + M2: engine change vs "sensor X is wrong"
         th_e, sd_e, cost_e, z_e = fit(excluded)
         lam = _lambda(len(blocks))
+        cost_e += _occam(th_e)
         hyps = {"engine": cost_e}
         best = (th_e, sd_e, cost_e, z_e, None, 0.0)
         absz = np.abs(z_e)
@@ -180,12 +228,38 @@ class LiveTwin:
                 m = good[ch][a:b]
                 if m.sum() >= 5:
                     zc.append((obs[ch][a:b][m] - tr[ch][a:b][m]).mean() / sigma[i])
-            c = cost_s + lam
+            c = cost_s + lam + _occam(th_s)
             hyps[f"sensor:{ch}"] = c
             if c < best[2] and zc and float(np.mean(np.abs(zc))) > MIN_SENSOR_Z:
                 best = (th_s, sd_s, c, z_s, ch, float(np.mean(np.abs(zc))))
         theta, theta_sd, best_cost, z_best, sensor_ch, sensor_z = best
+
+        # Recent check. Health is held constant across the window, so an engine change that happened
+        # INSIDE it (a fault ramping in, or a repair) cannot be fitted end to end, and dropping the
+        # channel that moved most can look like a lying sensor. A lying sensor disagrees in the recent
+        # blocks too; an engine change that has finished is explained there by the engine alone.
+        th_r, sd_r, cost_r, z_r = fit(excluded, rows=recent)
         if sensor_ch is not None:
+            _, _, cost_rs, _ = fit(excluded + [sensor_ch], rows=recent)
+            if cost_rs + _lambda_recent(len(recent)) >= cost_r:
+                hyps["engine (recent)"] = cost_r
+                theta, theta_sd, z_best, sensor_ch = th_r, sd_r, z_r, None
+        if sensor_ch is None and q(z_best) > FRESH_Q_LONG and q(z_r) < FRESH_Q_RECENT:
+            # The window straddles a change and the recent blocks fit cleanly: report the engine as it is now.
+            theta, theta_sd, z_best = th_r, sd_r, z_r
+            hyps["engine (recent)"] = cost_r
+
+        # A residual-based sensor call must hold for SENSOR_CONFIRM_S simulated seconds before it is
+        # reported. For the first half-minute after a sudden change, "that sensor is lying" and "the
+        # engine just changed" are genuinely hard to tell apart (a ramping fault cannot be fitted by
+        # constant health), and those misfits come and go; a lying sensor keeps disagreeing. Meanwhile
+        # health comes from the fit WITHOUT the suspect channel, so the engine change is still the
+        # headline and a sensor that really is lying never contaminates the estimate.
+        t_now = float(w["t_s"].iloc[-1])
+        if sensor_ch is None or sensor_ch != self._sensor_candidate:
+            self._sensor_candidate, self._candidate_since = sensor_ch, t_now
+        confirmed = sensor_ch is not None and t_now - self._candidate_since >= SENSOR_CONFIRM_S
+        if sensor_ch is not None and confirmed:
             tr = trace(theta)
             r = (obs[sensor_ch] - tr[sensor_ch])[BURN_S:]
             mode, k = _classify_residual(r, np.arange(len(r), dtype=float))
@@ -247,11 +321,8 @@ class LiveTwin:
         hot_ch = max(hot, key=lambda c: hot[c] / abs(_limit(c)))
 
         # Anomaly: what the chosen explanation still cannot explain
-        zb = z_best[~np.isnan(z_best)]
-        q = float(np.mean(zb ** 2)) if zb.size else 0.0
-
         return _result(theta, theta_sd, d, faults, causes, dx["no_fault"], hyps, cyl_dev, finite, rul_ch,
-                       hot, hot_ch, q, nominal, residual_z, n, len(blocks),
+                       hot, hot_ch, q(z_best), nominal, residual_z, n, len(blocks),
                        round(1000 * (time.perf_counter() - t0)), int(w["t_s"].iloc[-1]))
 
 
@@ -298,11 +369,17 @@ def _result(theta, theta_sd, d, faults: List[SensorFault], causes, no_fault, hyp
     probs = {"healthy": float(no_fault)}
     for c in causes:
         probs[c["id"]] = float(c["score"])
-    top = causes[0]["id"] if causes else "healthy"
+    # Headline: a real engine change outranks a distrusted sensor, which is still reported beside it
+    # (twin.sensor_faults, and DiagnosisBlock.sensorFault on the server).
+    engine_causes = [c for c in causes if c["id"] != "sensor_fault"]
+    if engine_causes and d.max() > ENGINE_FLAG:
+        top = engine_causes[0]["id"]
+    else:
+        top = causes[0]["id"] if causes else "healthy"
     fault_type = top if causes and probs[top] > probs["healthy"] else "healthy"
 
-    attribution = ("both" if faults and d.max() > 0.15 else "sensor" if faults
-                   else "engine" if d.max() > 0.15 else "none")
+    attribution = ("both" if faults and d.max() > ENGINE_FLAG else "sensor" if faults
+                   else "engine" if d.max() > ENGINE_FLAG else "none")
     factors = [{"name": nme, "label": HF_LABEL[nme], "value": round(float(theta[i]), 4),
                 "sd": round(float(theta_sd[i]), 4), "deficit": round(float(d[i]), 4),
                 "healthy": float(HF_HEALTHY[i]), "fail": float(HF_FAIL[i])}
