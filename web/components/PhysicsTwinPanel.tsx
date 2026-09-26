@@ -138,13 +138,16 @@ export function PhysicsTwinPanel({ frame, compact = false }: { frame: TickFrame 
           <div className="tw-h">
             Explanations weighed by M1 <span className="tw-muted">· penalized cost, lowest wins</span>
           </div>
-          {hyps.map(([k, v], i) => (
-            <div key={k} className="tw-hyp">
-              <span>{k === "engine" ? "Engine changed, every sensor true" : `${ch(k.split(":")[1])} sensor is wrong`}</span>
-              <span className="mono">{v.toFixed(0)}</span>
-              <span className="tw-muted">{i === 0 ? "chosen" : ""}</span>
-            </div>
-          ))}
+          {hyps.map(([k, v], i) => {
+            const sensorCh = k.startsWith("sensor:") ? k.slice("sensor:".length) : null;
+            return (
+              <div key={k} className="tw-hyp">
+                <span>{sensorCh ? `${ch(sensorCh)} sensor is wrong` : "Engine changed, every sensor true"}</span>
+                <span className="mono">{v.toFixed(0)}</span>
+                <span className="tw-muted">{i === 0 ? "chosen" : ""}</span>
+              </div>
+            );
+          })}
         </div>
       )}
 

@@ -87,7 +87,10 @@ const ASSESSING_LABEL = "assessing";
  * ops_context.py do the rest each tick, so this only needs to fire a handful
  * of times per flight, not every tick.
  */
-const CRUISE_ALT_M = 3000;
+// Lowered from 3000 to 1800 (and the schedule below compressed) so a demo sortie reaches
+// cruise, where faults are actually tested, in ~75s instead of ~130s. Ground roll and climb
+// are still fully modelled by the physics — only the SCRIPTED waiting between them was cut.
+const CRUISE_ALT_M = 1800;
 const CRUISE_POWER_PCT = 68;
 
 /**
@@ -111,14 +114,14 @@ interface AutopilotStep {
 
 const AUTOPILOT_SCHEDULE: AutopilotStep[] = [
   { atSimT: 0, input: { throttle: 20, gear: true, autopilot: false } },
-  { atSimT: 4, input: { throttle: 95 } }, // taxi -> takeoff roll (reduced from 8s to 4s)
-  { atSimT: 15, input: { throttle: 88, autopilot: true, ap_target_alt: CRUISE_ALT_M, gear: false } }, // climb out (reduced from 25s to 15s)
+  { atSimT: 3, input: { throttle: 95 } }, // taxi -> takeoff roll (reduced from 4s to 3s)
+  { atSimT: 6, input: { throttle: 88, autopilot: true, ap_target_alt: CRUISE_ALT_M, gear: false } }, // climb out (reduced from 15s to 6s — was 11s of scripted ground roll with nothing to test)
   {
     // Cruise power on level-off, not on the clock. The atSimT floor only stops
     // it firing during the initial ground roll; the altitude predicate is what
     // actually releases it, and the schedule cannot stall because a step is
     // skipped if the aircraft never gets there (see fireDueAutopilotSteps).
-    atSimT: 110,
+    atSimT: 20,
     when: ({ altM }) => altM >= CRUISE_ALT_M * 0.97,
     input: { throttle: CRUISE_POWER_PCT },
   },
@@ -143,7 +146,7 @@ const AUTOPILOT_SCHEDULE: AutopilotStep[] = [
  * the best available estimate before the climb has happened.
  */
 export function opsMissionProfile(): MissionProfile {
-  const NOMINAL_LEVEL_OFF_SIM_T = 300; // typical time to reach CRUISE_ALT_M
+  const NOMINAL_LEVEL_OFF_SIM_T = 75; // measured time to reach CRUISE_ALT_M (1800m) on the compressed schedule
   const marks = AUTOPILOT_SCHEDULE.map((step, i) => ({
     atSimT: step.when ? NOMINAL_LEVEL_OFF_SIM_T : step.atSimT,
     throttle: typeof step.input.throttle === "number" ? (step.input.throttle as number) : null,
