@@ -7,6 +7,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { EngineModel } from "./EngineModel";
 import { FaultHighlighter } from "./FaultHighlighter";
 import { ScanlineEffect } from "./ScanlineEffect";
+import { HologramMaterialFactory, ViewMode } from "./HologramMaterials";
 import { TickFrame } from "@/lib/types";
 
 interface Props {
@@ -22,16 +23,27 @@ export function Twin3DCanvas({ frame, autoRotate = true }: Props) {
   const controlsRef = useRef<OrbitControls | null>(null);
   const frameRef = useRef<TickFrame | null>(frame);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("solid"); // Default to Solid CAD (Point 3)
+  const [isRotating, setIsRotating] = useState(autoRotate);
 
-  // Update engine model materials when frame changes. The ref is what the
-  // animation loop reads — the loop is created once, so closing over `frame`
-  // would pin it to the first render's value forever.
+  // Update engine model materials when frame changes
   useEffect(() => {
     frameRef.current = frame;
     if (engineModelRef.current) {
       engineModelRef.current.updateFromFrame(frame);
     }
   }, [frame]);
+
+  const handleSwitchMode = (mode: ViewMode) => {
+    setViewMode(mode);
+    HologramMaterialFactory.getInstance().setViewMode(mode);
+    if (scanlineRef.current) {
+      scanlineRef.current.mesh.visible = mode === "hologram";
+    }
+    if (engineModelRef.current && frameRef.current) {
+      engineModelRef.current.updateFromFrame(frameRef.current);
+    }
+  };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -53,15 +65,14 @@ export function Twin3DCanvas({ frame, autoRotate = true }: Props) {
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.95;
+    renderer.toneMappingExposure = 1.05;
     container.appendChild(renderer.domElement);
 
-    // Image-based lighting: without an environment the model's metal surfaces
-    // have nothing to reflect and collapse into flat silhouettes.
+    // Image-based lighting for metal reflections
     const pmrem = new THREE.PMREMGenerator(renderer);
     const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
     scene.environment = envRT.texture;
-    scene.environmentIntensity = 0.35;
+    scene.environmentIntensity = 0.55;
 
     // 4. OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -70,63 +81,35 @@ export function Twin3DCanvas({ frame, autoRotate = true }: Props) {
     controls.maxDistance = 10;
     controls.minDistance = 1.2;
     controls.target.set(0, -0.05, 0);
-    controls.autoRotate = autoRotate;
+    controls.autoRotate = isRotating;
     controls.autoRotateSpeed = 0.4;
     controlsRef.current = controls;
 
-    // 5. High-Tech Holographic Lighting
-    // Intensities are tuned for lit PBR surfaces; the previous values were set
-    // for a fully emissive model and blow real materials out to flat white.
-    const ambientLight = new THREE.AmbientLight(0x0e2430, 0.6);
+    // 5. Lighting Setup
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
     scene.add(ambientLight);
 
-    const cyanKeyLight = new THREE.DirectionalLight(0xa8e6ee, 2.2);
-    cyanKeyLight.position.set(5, 7, 5);
-    scene.add(cyanKeyLight);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+    keyLight.position.set(5, 7, 5);
+    scene.add(keyLight);
 
-    const cyanFillLight = new THREE.DirectionalLight(0x38a0ad, 1.1);
-    cyanFillLight.position.set(-5, 4, -4);
-    scene.add(cyanFillLight);
+    const fillLight = new THREE.DirectionalLight(0xa0c0d8, 1.2);
+    fillLight.position.set(-5, 4, -4);
+    scene.add(fillLight);
 
-    const blueRimLight = new THREE.DirectionalLight(0x2a6ea8, 1.6);
-    blueRimLight.position.set(-2, -4, -6);
-    scene.add(blueRimLight);
+    const rimLight = new THREE.DirectionalLight(0x54c6d1, 1.5);
+    rimLight.position.set(-2, -4, -6);
+    scene.add(rimLight);
 
-    const corePointLight = new THREE.PointLight(0x54c6d1, 1.2, 8);
-    corePointLight.position.set(0, 0.2, 0);
-    scene.add(corePointLight);
-
-    // 6. Holographic Floor Grid
-    const gridHelper = new THREE.GridHelper(7, 28, 0x54c6d1, 0x112733);
+    // 6. Floor Grid
+    const gridHelper = new THREE.GridHelper(7, 28, 0x38bdf8, 0x112733);
     gridHelper.position.y = -1.2;
     scene.add(gridHelper);
 
-    // Subtle concentric distance rings on the floor
-    const ringGeo1 = new THREE.RingGeometry(2.4, 2.42, 48);
-    ringGeo1.rotateX(-Math.PI / 2);
-    const ringMat1 = new THREE.MeshBasicMaterial({
-      color: 0x54c6d1,
-      transparent: true,
-      opacity: 0.14,
-      side: THREE.DoubleSide,
-      // Additive: at normal blending these read as flat grey paint on the floor
-      // rather than as emitted cyan light.
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const ringMesh1 = new THREE.Mesh(ringGeo1, ringMat1);
-    ringMesh1.position.y = -1.19;
-    scene.add(ringMesh1);
-
-    const ringGeo2 = new THREE.RingGeometry(3.4, 3.42, 48);
-    ringGeo2.rotateX(-Math.PI / 2);
-    const ringMesh2 = new THREE.Mesh(ringGeo2, ringMat1);
-    ringMesh2.position.y = -1.19;
-    scene.add(ringMesh2);
-
-    // 7. Authentic Rotax 915 iS Engine Model (Hologram FBX)
+    // 7. Authentic Rotax 915 iS Engine Model
     const engineModel = new EngineModel(() => {
       setIsLoaded(true);
+      HologramMaterialFactory.getInstance().setViewMode(viewMode);
     });
     scene.add(engineModel.group);
     engineModelRef.current = engineModel;
@@ -135,8 +118,9 @@ export function Twin3DCanvas({ frame, autoRotate = true }: Props) {
     const faultHighlighter = new FaultHighlighter(engineModel);
     faultHighlighterRef.current = faultHighlighter;
 
-    // 9. Holographic Scanline Sweep Effect
+    // 9. Scanline Sweep Effect (Hologram mode only)
     const scanline = new ScanlineEffect();
+    scanline.mesh.visible = viewMode === "hologram";
     scene.add(scanline.mesh);
     scanlineRef.current = scanline;
 
@@ -153,7 +137,7 @@ export function Twin3DCanvas({ frame, autoRotate = true }: Props) {
       if (faultHighlighterRef.current) {
         faultHighlighterRef.current.update(delta, frameRef.current);
       }
-      if (scanlineRef.current) {
+      if (scanlineRef.current && scanlineRef.current.mesh.visible) {
         scanlineRef.current.update(delta);
       }
 
@@ -189,6 +173,13 @@ export function Twin3DCanvas({ frame, autoRotate = true }: Props) {
     };
   }, []);
 
+  // Update autoRotate when state toggles
+  useEffect(() => {
+    if (controlsRef.current) {
+      controlsRef.current.autoRotate = isRotating;
+    }
+  }, [isRotating]);
+
   return (
     <div className="holo-canvas-wrapper" style={{ position: "relative", width: "100%", height: "100%", minHeight: "450px" }}>
       <div ref={containerRef} style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }} />
@@ -205,34 +196,177 @@ export function Twin3DCanvas({ frame, autoRotate = true }: Props) {
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            background: "rgba(10, 18, 25, 0.75)",
-            backdropFilter: "blur(4px)",
+            background: "rgba(10, 18, 25, 0.8)",
+            backdropFilter: "blur(6px)",
             zIndex: 10,
             pointerEvents: "none",
           }}
         >
           <div
             style={{
-              width: "40px",
-              height: "40px",
-              border: "3px solid rgba(84, 198, 209, 0.2)",
-              borderTop: "3px solid #54c6d1",
+              width: "44px",
+              height: "44px",
+              border: "3px solid rgba(56, 189, 248, 0.2)",
+              borderTop: "3px solid #38bdf8",
               borderRadius: "50%",
               animation: "spin 1s linear infinite",
-              marginBottom: "12px",
+              marginBottom: "14px",
             }}
           />
-          <div style={{ color: "#54c6d1", fontSize: "12px", fontWeight: 600, letterSpacing: "1.5px", textTransform: "uppercase" }}>
-            Loading Rotax 915 iS Hologram...
+          <div style={{ color: "#38bdf8", fontSize: "13px", fontWeight: 700, letterSpacing: "1.5px", textTransform: "uppercase" }}>
+            Loading Rotax 915 iS Engine Assembly...
           </div>
         </div>
       )}
 
-      <div className="holo-overlay-badge">
-        <span className="holo-dot" />
-        <span>ROTAX 915 iS HOLOGRAPHIC DIGITAL TWIN</span>
+      {/* Point 15: View Mode Switcher Toggle */}
+      <div
+        style={{
+          position: "absolute",
+          top: 14,
+          left: 14,
+          zIndex: 20,
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          background: "rgba(15, 23, 42, 0.85)",
+          backdropFilter: "blur(6px)",
+          padding: "3px",
+          borderRadius: "8px",
+          border: "1px solid rgba(255, 255, 255, 0.12)",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => handleSwitchMode("solid")}
+          style={{
+            background: viewMode === "solid" ? "#1e293b" : "transparent",
+            color: viewMode === "solid" ? "#38bdf8" : "#94a3b8",
+            border: viewMode === "solid" ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid transparent",
+            padding: "5px 10px",
+            borderRadius: "6px",
+            fontSize: "11px",
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+          }}
+        >
+          <span>⚙️ Solid CAD</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleSwitchMode("thermal")}
+          style={{
+            background: viewMode === "thermal" ? "#7f1d1d" : "transparent",
+            color: viewMode === "thermal" ? "#fca5a5" : "#94a3b8",
+            border: viewMode === "thermal" ? "1px solid #ef4444" : "1px solid transparent",
+            padding: "5px 10px",
+            borderRadius: "6px",
+            fontSize: "11px",
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+          }}
+        >
+          <span>🔥 Thermal FLIR</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleSwitchMode("hologram")}
+          style={{
+            background: viewMode === "hologram" ? "#0e3a47" : "transparent",
+            color: viewMode === "hologram" ? "#54c6d1" : "#94a3b8",
+            border: viewMode === "hologram" ? "1px solid #54c6d1" : "1px solid transparent",
+            padding: "5px 10px",
+            borderRadius: "6px",
+            fontSize: "11px",
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+          }}
+        >
+          <span>🔷 Hologram</span>
+        </button>
       </div>
-      <div className="holo-instructions">
+
+      {/* Point 15: Thermal Scale Bar Legend (visible in Thermal mode) */}
+      {viewMode === "thermal" && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 38,
+            left: 14,
+            zIndex: 20,
+            background: "rgba(15, 23, 42, 0.9)",
+            border: "1px solid rgba(239, 68, 68, 0.4)",
+            borderRadius: "8px",
+            padding: "8px 12px",
+            fontSize: "11px",
+            color: "#e2e8f0",
+            minWidth: "240px",
+          }}
+        >
+          <div style={{ fontWeight: 700, color: "#fca5a5", marginBottom: 4, display: "flex", justifyContent: "space-between" }}>
+            <span>THERMAL HEATMAP SCALE</span>
+            <span>FLIR INFRARED</span>
+          </div>
+          <div
+            style={{
+              height: "10px",
+              borderRadius: "4px",
+              background: "linear-gradient(to right, #001f5c, #00d4ff, #00ff66, #ffdd00, #ff5500, #ff0000)",
+              marginBottom: "4px",
+            }}
+          />
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#94a3b8", fontFamily: "var(--font-mono, monospace)" }}>
+            <span>20°C (Cold)</span>
+            <span>450°C</span>
+            <span>950°C (EGT Peak)</span>
+          </div>
+          {frame?.sensors && (
+            <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.1)", display: "flex", gap: 10, fontSize: "10.5px" }}>
+              <span>EGT: <strong style={{ color: "#ff5500" }}>{frame.sensors.egt_1_c?.toFixed(0) ?? 820}°C</strong></span>
+              <span>CHT: <strong style={{ color: "#ffdd00" }}>{frame.sensors.cht_1_c?.toFixed(0) ?? 112}°C</strong></span>
+              <span>Oil: <strong style={{ color: "#00ff66" }}>{frame.sensors.oil_t_c?.toFixed(0) ?? 96}°C</strong></span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Rotation control button */}
+      <button
+        type="button"
+        onClick={() => setIsRotating((r) => !r)}
+        style={{
+          position: "absolute",
+          top: 14,
+          right: 14,
+          zIndex: 20,
+          background: "rgba(15, 23, 42, 0.85)",
+          border: "1px solid rgba(255, 255, 255, 0.12)",
+          color: isRotating ? "#38bdf8" : "#94a3b8",
+          padding: "6px 10px",
+          borderRadius: "6px",
+          fontSize: "11px",
+          fontWeight: 600,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+        }}
+      >
+        <span>{isRotating ? "⏸ Pause Rotation" : "▶ Auto-Rotate"}</span>
+      </button>
+
+      <div className="holo-instructions" style={{ bottom: 10 }}>
         <span>Left-click + drag: Rotate | Scroll: Zoom | Right-click: Pan</span>
       </div>
     </div>

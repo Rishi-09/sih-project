@@ -11,21 +11,8 @@ import { LimiterList } from "@/components/LimiterList";
 import { WhatIfPlanner } from "@/components/WhatIfPlanner";
 import { DetailTabs } from "@/components/DetailTabs";
 import { ControlBar } from "@/components/ControlBar";
+import { MiniTwinPreview } from "@/components/MiniTwinPreview";
 
-/**
- * Operator console, organised by DECISION rather than by data source.
- *
- * Three levels, in the order an operator reads them:
- *   1. Can this sortie finish, and what should I do?   (MissionStatus)
- *   2. What is consuming the margin, and what would   (LimiterList,
- *      backing off power buy me?                       WhatIfPlanner)
- *   3. Everything else, one tab at a time.             (DetailTabs)
- *
- * The previous layout put all of level 3 on screen permanently — 19 sensor
- * tiles, subsystem scores, probability bars, alerts and a chat box side by side
- * — and left the operator to work out which numbers mattered. Nothing has been
- * removed; it has been ranked.
- */
 export default function ConsolePage() {
   const params = useParams<{ engineId: string }>();
   const engineId = params.engineId;
@@ -52,10 +39,6 @@ export default function ConsolePage() {
 
   const twin = useTwinSocket(runId);
 
-  // A run can be recorded as live in the database while the process that owned
-  // it is gone (a server restart drops the in-memory run). The console would
-  // then subscribe and sit on "Waiting for telemetry…" indefinitely. Ask the
-  // server whether the run is live in THIS process, and say so if it is not.
   const [runDead, setRunDead] = useState(false);
   const noFrameYet = Boolean(runId) && !twin.latest;
   useEffect(() => {
@@ -83,12 +66,10 @@ export default function ConsolePage() {
 
   async function handleStop() {
     if (!runId) return;
-    // Clear locally even if the server 404s. A run the server has already
-    // forgotten is exactly the case where the operator most needs Stop to work.
     try {
       await api.stopRun(runId);
     } catch {
-      /* already gone server-side — nothing to stop */
+      /* already gone server-side */
     }
     setRunId(null);
     setRunDead(false);
@@ -104,14 +85,27 @@ export default function ConsolePage() {
     await api.clearFaults(runId);
   }
 
-  if (loadingEngine) return <main className="console">Loading…</main>;
+  // Point 7: Instant skeleton loader instead of slow blank text
+  if (loadingEngine) {
+    return (
+      <main className="console" style={{ padding: "28px" }}>
+        <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "20px" }}>
+          <div className="skeleton-box" style={{ width: "120px", height: "36px", borderRadius: "8px" }} />
+          <div className="skeleton-box" style={{ width: "200px", height: "36px", borderRadius: "8px" }} />
+        </div>
+        <div className="skeleton-box" style={{ width: "100%", height: "200px", borderRadius: "12px", marginBottom: "20px" }} />
+        <div className="skeleton-box" style={{ width: "100%", height: "320px", borderRadius: "12px" }} />
+      </main>
+    );
+  }
+
   if (!engine) {
     return (
       <main className="console">
-        <Link href="/" className="back">
-          ← Fleet
+        <Link href="/fleet" className="btn-back-action">
+          ← Back to Fleet
         </Link>
-        <div className="empty-state">
+        <div className="empty-state" style={{ marginTop: "24px" }}>
           Engine not found. Is the backend seeded? (<code>npm run seed</code> in <code>server/</code>)
         </div>
       </main>
@@ -123,30 +117,41 @@ export default function ConsolePage() {
   return (
     <main className="console">
       <header className="console-header">
-        <Link href="/" className="back">
-          ← Fleet
+        {/* Point 12: Prominent Back Button */}
+        <Link href="/fleet" className="btn-back-action">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          <span>Fleet Overview</span>
         </Link>
-        <div className="tail">{engine.tail}</div>
+
+        <div className="tail" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span>{engine.tail}</span>
+          <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>[{engine.model}]</span>
+        </div>
+
         {frame && <div className="phase-pill">{frame.phase}</div>}
         <div className="spacer" />
-        {/* Engine health is deliberately secondary to mission reliability here.
-            It answers "how degraded is the engine", which is a maintenance
-            question; the headline answers "will this sortie finish", which is
-            the operator's. */}
+
         {frame && (
-          <div className="ehi-chip" title="Engine health index — condition now, not mission outcome">
-            {/* Dash, not 100: before the backend's first health evaluation
-                there is no index, and a filled-in perfect score would be the
-                most misleading possible placeholder on a health monitor. */}
+          <div className="ehi-chip" title="Engine health index — condition now">
             <span className="ehi-num">{frame.health.ehi === null ? "—" : Math.round(frame.health.ehi)}</span>
             <span className="ehi-cap">health</span>
           </div>
         )}
+
         {runId && <span className={`conn-status conn-${twin.status}`}>{twin.status}</span>}
-        <Link href={`/uav/${engineId}/twin3d`} className="btn btn-quiet">
-          3D twin
+
+        {/* 3D Twin CTA button */}
+        <Link href={`/uav/${engineId}/twin3d`} className="btn-action-twin">
+          <span>3D Twin</span>
+          <span>◈</span>
         </Link>
       </header>
+
+      {/* Point 3: Default 3D Engine View embedded in Console Page! */}
+      <MiniTwinPreview engineId={engineId} frame={frame} />
 
       {!runId ? (
         <>
@@ -160,14 +165,12 @@ export default function ConsolePage() {
               onClearFaults={handleClearFaults}
             />
           </div>
-          <div className="empty-state">No active sortie for {engine.tail}. Start one above to bring the twin live.</div>
+          <div className="empty-state" style={{ marginTop: 14 }}>
+            No active sortie for {engine.tail}. Start one above to bring live physics and ML diagnostics online.
+          </div>
         </>
       ) : !frame ? (
         <>
-          {/* Controls stay on screen while waiting. Putting them inside the
-              has-a-frame branch meant a run that never produced telemetry left
-              the operator with no Stop and no Start — a dead end reachable
-              just by restarting the server. */}
           <div className="panel">
             <ControlBar
               runId={runId}
@@ -178,16 +181,38 @@ export default function ConsolePage() {
               onClearFaults={handleClearFaults}
             />
           </div>
-          <div className="empty-state">
+
+          {/* Point 7: Interactive Telemetry Connection Card */}
+          <div
+            className="empty-state"
+            style={{
+              marginTop: 14,
+              padding: "24px",
+              background: "#131b22",
+              border: "1px solid rgba(56, 189, 248, 0.2)",
+              borderRadius: "10px",
+              textAlign: "center",
+            }}
+          >
             {runDead ? (
               <>
-                <div>This sortie is no longer running on the server.</div>
-                <div style={{ fontSize: 12.5, marginTop: 8 }}>
-                  It was most likely ended by a server restart. Stop it to clear the console, then start a new one.
+                <div style={{ color: "#f87171", fontWeight: 700, fontSize: "14px" }}>
+                  Sortie process is no longer active on the server.
+                </div>
+                <div style={{ fontSize: 12.5, marginTop: 8, color: "#94a3b8" }}>
+                  It was likely ended by a server restart. Stop it to clear the console, then start a new one.
                 </div>
               </>
             ) : (
-              "Waiting for telemetry…"
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#38bdf8", fontWeight: 700, fontSize: "14px" }}>
+                  <span className="spinner-icon-anim">⚙️</span>
+                  <span>Connecting to Live 1 Hz Telemetry Stream...</span>
+                </div>
+                <div style={{ fontSize: "12px", color: "#64748b" }}>
+                  Simulator socket handshake in progress. Telemetry frame will appear in seconds.
+                </div>
+              </div>
             )}
           </div>
         </>
@@ -208,11 +233,8 @@ export default function ConsolePage() {
 
           <DetailTabs frame={frame} runId={runId} />
 
-          {/* Scenario controls last: they drive the demo, not the decision. */}
+          {/* Scenario controls */}
           <div className="panel panel-controls">
-            {/* injected comes straight off the telemetry frame — the backend's
-                own ledger of what is active, so the chips confirm the command
-                landed rather than echoing local hope. */}
             <ControlBar
               runId={runId}
               injected={frame.injectedFaults}

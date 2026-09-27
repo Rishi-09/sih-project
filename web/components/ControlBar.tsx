@@ -2,11 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 
-// Matches contract/faults.json exactly (transcribed from Retribution's
-// faults.py — the source of truth). ignition_fault_cyl3 / injector_fault_cyl3
-// are hardcoded to cylinder 3 in the real simulator today, and the two sensor
-// faults each target one fixed channel — no cylinder or channel picker for
-// any of these, since a different choice wouldn't be honored.
 const FAULT_TYPES = [
   "lubrication_degradation",
   "cooling_failure",
@@ -38,6 +33,9 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
   const [severity, setSeverity] = useState(0.6);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Point 8: Instantaneous launch feedback state
+  const [launchStage, setLaunchStage] = useState<"idle" | "launching" | "spooling">("idle");
 
   // Auto-kill on idle settings & timer
   const [idleKillEnabled, setIdleKillEnabled] = useState<boolean>(() => {
@@ -77,7 +75,6 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
 
     const handleUserActivity = () => {
       const now = Date.now();
-      // Throttle activity updates to at most once per 500ms
       if (now - lastActivityRef.current > 500) {
         recordActivity();
       }
@@ -110,9 +107,6 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
     return () => clearInterval(interval);
   }, [runId, idleKillEnabled]);
 
-  // Locked to cylinder 3 — Retribution's simulator hardcodes both per-cylinder
-  // faults there today (SIMULATOR_CONTEXT.md §14); a picker would offer a
-  // choice the backend can't actually honor.
   const perCylinder = faultType === "ignition_fault_cyl3" || faultType === "injector_fault_cyl3";
   const alreadyActive = injected.includes(faultType);
 
@@ -126,8 +120,20 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
       setError((e as Error).message);
     } finally {
       setBusy(false);
+      setLaunchStage("idle");
     }
   }
+
+  const handleStartSortie = () => {
+    setIdleNotice(null);
+    // Point 8: Instantaneous state change within 0ms
+    setLaunchStage("launching");
+    setTimeout(() => {
+      setLaunchStage("spooling");
+    }, 700);
+
+    run(() => onStart(scenario));
+  };
 
   const formatCountdown = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -139,19 +145,37 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
     return (
       <div className="controls">
         <div className="control-bar">
-          <select value={scenario} onChange={(e) => setScenario(e.target.value)}>
+          <select value={scenario} onChange={(e) => setScenario(e.target.value)} disabled={busy}>
             <option value="S1">S1 — Nominal sortie</option>
             <option value="custom">Custom mission</option>
           </select>
+
+          {/* Point 8: Instantaneous visual feedback button */}
           <button
             className="btn btn-primary"
-            onClick={() => {
-              setIdleNotice(null);
-              run(() => onStart(scenario));
-            }}
+            onClick={handleStartSortie}
             disabled={busy}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              minWidth: "150px",
+              justifyContent: "center",
+            }}
           >
-            Start sortie
+            {launchStage === "launching" ? (
+              <>
+                <span className="spinner-icon-anim">⚡</span>
+                <span>Connecting FADEC...</span>
+              </>
+            ) : launchStage === "spooling" ? (
+              <>
+                <span className="spinner-icon-anim">⚙️</span>
+                <span>Spooling Engine...</span>
+              </>
+            ) : (
+              <span>Start sortie</span>
+            )}
           </button>
 
           <div className="spacer" />
@@ -170,6 +194,38 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
           </button>
         </div>
 
+        {/* Point 8: Live launch step progress indicator during the 2-sec startup */}
+        {launchStage !== "idle" && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: "8px 14px",
+              background: "rgba(16, 185, 129, 0.1)",
+              border: "1px solid rgba(52, 211, 153, 0.3)",
+              borderRadius: "8px",
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              fontSize: "12px",
+              color: "#34d399",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span>✓</span>
+              <span>1. FADEC Handshake</span>
+            </div>
+            <span>→</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}>
+              <span className="spinner-icon-anim">✦</span>
+              <span>2. Initializing Rotax 915 Physics Simulator</span>
+            </div>
+            <span>→</span>
+            <div style={{ color: "#64748b" }}>
+              <span>3. 1 Hz Stream</span>
+            </div>
+          </div>
+        )}
+
         {idleNotice && (
           <div className="idle-kill-alert">
             <span className="alert-icon">⚡</span>
@@ -177,6 +233,8 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
             <button className="close-btn" onClick={() => setIdleNotice(null)}>×</button>
           </div>
         )}
+
+        {error && <div className="control-error">{error}</div>}
       </div>
     );
   }

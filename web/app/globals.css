@@ -496,3 +496,109 @@ code, .mono { font-family: var(--font-mono); }
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ==========================================================================
+   Action Buttons & UX Utilities (Points 6, 7, 9, 12)
+   ========================================================================== */
+
+/* Point 6: High-contrast Console Button */
+.btn-action-console {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff !important;
+  font-weight: 700;
+  font-size: 11.5px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35);
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.btn-action-console:hover {
+  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+  box-shadow: 0 4px 14px rgba(14, 165, 233, 0.5);
+  transform: translateY(-1px);
+}
+
+/* Point 12: High-contrast Back to Fleet Button */
+.btn-back-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #141c22;
+  color: #e2e8f0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.btn-back-action:hover {
+  background: #1e293b;
+  border-color: #38bdf8;
+  color: #ffffff !important;
+  transform: translateX(-2px);
+}
+
+.btn-action-twin {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(84, 198, 209, 0.18) 0%, rgba(14, 165, 233, 0.18) 100%);
+  color: #54c6d1 !important;
+  border: 1px solid rgba(84, 198, 209, 0.4);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.btn-action-twin:hover {
+  background: #54c6d1;
+  color: #061016 !important;
+  box-shadow: 0 0 12px rgba(84, 198, 209, 0.4);
+}
+
+/* Point 7: Fast Loading Skeleton Box */
+.skeleton-box {
+  background: linear-gradient(90deg, #141c22 25%, #1c2730 50%, #141c22 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Point 8: Spinner Icon Animation */
+.spinner-icon-anim {
+  display: inline-block;
+  animation: spin-pulse 1s linear infinite;
+}
+
+@keyframes spin-pulse {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Point 9: Resizable Dividers Hover Effects */
+.resize-handle-col:hover {
+  background: rgba(56, 189, 248, 0.4) !important;
+}
+
+.resize-handle-row:hover {
+  background: rgba(56, 189, 248, 0.4) !important;
+}
+
