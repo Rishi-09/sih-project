@@ -7,6 +7,7 @@ import { AiScanModal } from "./AiScanModal";
 
 interface Props {
   onOpenGuide?: () => void;
+  onStartTutorial?: () => void;
 }
 
 function pageMeta(pathname: string): { title: string; sub: string } {
@@ -66,7 +67,14 @@ export function TopBar({ onOpenGuide }: Props) {
           <span>{clock ?? "--:--:--Z"}</span>
         </div>
 
-        <button type="button" className="btn-icon" onClick={onOpenGuide} aria-label="Operator guide">
+        <button
+          id="operator-guide-btn"
+          type="button"
+          className="btn-icon"
+          onClick={onOpenGuide}
+          aria-label="Operator guide & tutorial"
+          title="Quick Operator Guide & Interactive Tutorial"
+        >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="9" />
             <path d="M9.6 9.4a2.5 2.5 0 1 1 3.3 2.4c-.6.2-.9.8-.9 1.4v.4M12 17h.01" />
@@ -81,7 +89,12 @@ export function TopBar({ onOpenGuide }: Props) {
           <span className="notif-dot" />
         </button>
 
-        <button type="button" className="btn-primary" onClick={() => setScanModalOpen(true)}>
+        <button
+          id="btn-topbar-run-scan"
+          type="button"
+          className="btn-primary"
+          onClick={() => setScanModalOpen(true)}
+        >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 3v4M12 17v4M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M17.7 6.3l1.4-1.4M4.9 19.1l1.4-1.4" />
             <circle cx="12" cy="12" r="3.2" />

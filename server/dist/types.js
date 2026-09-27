@@ -5,7 +5,7 @@ exports.SUBSYSTEMS = exports.ENGINE_CHANNELS = exports.CONTRACT_VERSION = void 0
  * Mirrors /contract/types.ts — see that file for the "why duplicated" note.
  * Keep in sync; a shape change here needs the freeze ritual (published plan §B2).
  */
-exports.CONTRACT_VERSION = "1.1.0";
+exports.CONTRACT_VERSION = "1.2.0";
 // 19 engine channels — the original count. The Rotax 915 iS has liquid-cooled
 // cylinder heads with no factory per-cylinder CHT sensor (see
 // /contract/sensors.json _correction) — cht_1..4 are restored here as

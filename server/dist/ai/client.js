@@ -16,7 +16,7 @@ const kb_1 = require("./kb");
 // messages array (no separate top-level `system` field).
 const client = config_1.config.groqApiKey ? new groq_sdk_1.default({ apiKey: config_1.config.groqApiKey }) : null;
 async function generateAdvisory(frame) {
-    const kb = (0, kb_1.getKbEntry)(frame.diagnosis.label);
+    const kb = (0, kb_1.getKbEntry)(frame.diagnosis.label, kbContext(frame));
     if (!client)
         return { contentMd: kb.fallbackAdvisory, source: "offline" };
     const evidence = topResiduals(frame, 5);
@@ -26,7 +26,9 @@ async function generateAdvisory(frame) {
         `Health index: ${frame.health.ehi}/100. Subsystem scores: ${JSON.stringify(frame.health.subsystems)}.`,
         `Top deviating channels (z-score): ${evidence.map(([c, z]) => `${c}=${z}σ`).join(", ")}.`,
         `Known-fault reference: ${kb.description}`,
+        twinEvidence(frame),
         `Mission state: P(success)=${frame.mission.pSuccess}, recommendation=${frame.mission.recommendation}.`,
+        `Time remaining: mission remaining=${fmtDuration(frame.mission.missionRemainingSec)}, safe endurance=${fmtDuration(frame.mission.safeEnduranceSec)}, time to redline at current power=${fmtDuration(frame.prognosis.rulSec)}.`,
         "Write the advisory now, following the required structure.",
     ]
         .filter(Boolean)
@@ -86,6 +88,12 @@ async function answerChat(question, recentFrames) {
         return { answer: "The advisory service is temporarily unavailable — try again shortly.", source: "offline" };
     }
 }
+function fmtDuration(s) {
+    if (s === null)
+        return "n/a";
+    const m = Math.floor(s / 60);
+    return `${m}m ${Math.round(s % 60)}s`;
+}
 function topResiduals(frame, n) {
     return Object.entries(frame.residualZ)
         .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
@@ -100,8 +108,37 @@ function summarizeFrames(frames) {
         `health: ehi=${latest.health.ehi}, subsystems=${JSON.stringify(latest.health.subsystems)}`,
         `top residuals: ${evidence.map(([c, z]) => `${c}=${z}σ`).join(", ")}`,
         `sensor fault: ${latest.diagnosis.sensorFault.channel ?? "none"}`,
-        `mission: pSuccess=${latest.mission.pSuccess}, recommendation=${latest.mission.recommendation}`,
+        twinEvidence(latest),
+        `mission: pSuccess=${latest.mission.pSuccess}, recommendation=${latest.mission.recommendation}, reason="${latest.mission.reason}"`,
+        `time remaining: mission remaining=${fmtDuration(latest.mission.missionRemainingSec)}, safe endurance=${fmtDuration(latest.mission.safeEnduranceSec)}, time to redline at current power=${fmtDuration(latest.prognosis.rulSec)}`,
         `open alerts: ${latest.alerts.map((a) => a.code).join(", ") || "none"}`,
+    ].join("\n");
+}
+function kbContext(frame) {
+    return {
+        cylinder: frame.diagnosis.cylinder,
+        channel: frame.diagnosis.sensorFault.channel,
+        mode: frame.diagnosis.sensorFault.mode,
+    };
+}
+/** The physics twin's own evidence, so the advisory explains the twin's reasoning rather than guessing. */
+function twinEvidence(frame) {
+    const t = frame.twin;
+    if (!t)
+        return "Physics twin: no assessment available yet.";
+    const worst = [...t.factors]
+        .sort((a, b) => b.deficit - a.deficit)
+        .slice(0, 3)
+        .map((f) => `${f.label} ${f.value.toFixed(3)} (${Math.round(100 * f.deficit)}% of the way to failure)`);
+    const sensors = t.sensorFaults.map((f) => `${f.channel} ${f.mode} (${f.evidence})`);
+    const causes = t.causes.map((c) => `${c.label} ${Math.round(100 * c.score)}% - first check: ${c.check}`);
+    const ttl = t.limitingChannel ? `${t.limitingChannel} reaches redline in ${Math.round(t.timeToLimit[t.limitingChannel])} s at current power` : "no thermal redline reachable at current power";
+    return [
+        `Physics twin attribution: ${t.attribution}.`,
+        `Worst health factors: ${worst.join("; ")}.`,
+        `Distrusted sensors: ${sensors.join("; ") || "none"}.`,
+        `Ranked causes: ${causes.join(" | ") || "none"}.`,
+        `Thermal: ${ttl}.`,
     ].join("\n");
 }
 //# sourceMappingURL=client.js.map
