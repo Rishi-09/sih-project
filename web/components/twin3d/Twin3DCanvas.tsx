@@ -605,9 +605,6 @@ export function Twin3DCanvas({ frame, autoRotate = true, isFlightActive = false 
               : "DRY-SUMP OIL // INTERCOOLED TURBO // DUAL FADEC"}
           </span>
         </div>
-        <div className="hud-corner-tag hud-br">
-          <span>ROTATE: DRAG | ZOOM: SCROLL | PAN: RIGHT-CLICK</span>
-        </div>
       </div>
     </div>
   );

@@ -126,7 +126,8 @@ export default function ConsolePage() {
           <span>Fleet Overview</span>
         </Link>
 
-        <div className="tail" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div className="tail" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <img src="/drdo-logo.png" alt="DRDO" style={{ height: "30px", width: "auto", objectFit: "contain" }} />
           <span>{engine.tail}</span>
           <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>[{engine.model}]</span>
         </div>

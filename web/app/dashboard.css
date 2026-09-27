@@ -450,6 +450,10 @@
   flex-direction: column;
   position: relative;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .card-header-bar {
@@ -666,6 +670,52 @@
 /* Connected Systems Table (Bottom Left) */
 .connected-table-wrapper {
   overflow-x: auto;
+  width: 100%;
+  max-width: 100%;
+}
+
+.connected-mobile-list {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.mobile-system-card {
+  background: #0d1419;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.mobile-system-card:active {
+  transform: scale(0.98);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.mobile-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mobile-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mobile-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .connected-table {
@@ -1039,4 +1089,99 @@
   .grid-evidence {
     grid-template-columns: 1fr !important;
   }
+
+  /* Switch table to dedicated mobile cards on phone */
+  .connected-table-wrapper {
+    display: none !important;
+  }
+
+  .connected-mobile-list {
+    display: flex !important;
+  }
+
+  .map-visual-card {
+    height: 200px !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .map-time-tabs {
+    flex-wrap: wrap !important;
+    max-width: 100% !important;
+  }
+
+  /* Tactile touch interactions for mobile */
+  button:active, .btn:active, .btn-table-action:active, .btn-run-ai:active, .mobile-nav-item:active {
+    transform: scale(0.96) !important;
+    transition: transform 0.06s ease !important;
+  }
+
+  .topbar-drdo-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: 8px;
+    flex-shrink: 0;
+  }
+
+  .drdo-topbar-logo {
+    height: 26px;
+    width: auto;
+    object-fit: contain;
+  }
+
+  .drdo-badge-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+  }
+
+  .drdo-org-name {
+    font-size: 12px;
+    font-weight: 800;
+    color: #f8fafc;
+    letter-spacing: 0.05em;
+  }
+
+  .drdo-sub-title {
+    font-size: 8.5px;
+    font-weight: 700;
+    color: #38bdf8;
+    letter-spacing: 0.06em;
+  }
+}
+
+/* Desktop styles for DRDO badge in TopBar */
+.topbar-drdo-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 14px;
+  flex-shrink: 0;
+}
+
+.drdo-topbar-logo {
+  height: 32px;
+  width: auto;
+  object-fit: contain;
+}
+
+.drdo-badge-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.drdo-org-name {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #f8fafc;
+  letter-spacing: 0.05em;
+}
+
+.drdo-sub-title {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #38bdf8;
+  letter-spacing: 0.06em;
 }

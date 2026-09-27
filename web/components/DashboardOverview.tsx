@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { EngineSummary } from "@/lib/types";
+import { AiScanModal } from "./AiScanModal";
 
 interface Props {
   initialEngines: EngineSummary[];
@@ -11,6 +12,7 @@ interface Props {
 export function DashboardOverview({ initialEngines }: Props) {
   const [engines] = useState<EngineSummary[]>(initialEngines);
   const [scanning, setScanning] = useState(false);
+  const [scanModalOpen, setScanModalOpen] = useState(false);
   const [healthScore, setHealthScore] = useState(76);
   const [filterView, setFilterView] = useState("all");
   const [activeTimeTab, setActiveTimeTab] = useState("1D");
@@ -30,9 +32,10 @@ export function DashboardOverview({ initialEngines }: Props) {
 
   const handleRunScan = () => {
     setScanning(true);
+    setScanModalOpen(true);
     setTimeout(() => {
       setScanning(false);
-      setHealthScore(Math.floor(75 + Math.random() * 8));
+      setHealthScore(Math.floor(78 + Math.random() * 8));
     }, 1500);
   };
 
@@ -449,6 +452,72 @@ export function DashboardOverview({ initialEngines }: Props) {
               </tbody>
             </table>
           </div>
+
+          {/* Dedicated Mobile Cards (100% responsive, never overflows screen) */}
+          <div className="connected-mobile-list">
+            {displayEngines.map((e) => {
+              const score = e.ehi !== null && e.ehi !== undefined ? Math.round(e.ehi) : 92;
+              const isLive = e.latestRunStatus === "live" || e.latestRunStatus === "degraded";
+
+              return (
+                <div key={e.id} className="mobile-system-card">
+                  <div className="mobile-card-head">
+                    <div className="system-tail-cell">
+                      <span className="tail-icon-badge">✈</span>
+                      <span style={{ fontSize: "14px", fontWeight: 700 }}>{e.tail}</span>
+                    </div>
+                    {isLive ? (
+                      <span className="threat-tag threat-low">● Active Live</span>
+                    ) : (
+                      <span className="threat-tag" style={{ background: "rgba(148,163,184,0.15)", color: "#94a3b8" }}>
+                        ○ Standby
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mobile-card-row">
+                    <span style={{ color: "#94a3b8", fontSize: "12px" }}>Powerplant:</span>
+                    <span style={{ fontSize: "12px", color: "#e2e8f0" }}>Rotax 915 iS (Turbo)</span>
+                  </div>
+
+                  <div className="mobile-card-row" style={{ marginTop: "6px" }}>
+                    <span style={{ color: "#94a3b8", fontSize: "12px" }}>Health Score:</span>
+                    <div className="health-meter-bars">
+                      <div className="meter-segments">
+                        {Array.from({ length: 10 }).map((_, idx) => {
+                          const filled = idx < Math.round(score / 10);
+                          return (
+                            <div
+                              key={idx}
+                              className={`meter-segment ${
+                                filled
+                                  ? score >= 80
+                                    ? "active-green"
+                                    : score >= 50
+                                    ? "active-amber"
+                                    : "active-red"
+                                  : ""
+                              }`}
+                            />
+                          );
+                        })}
+                      </div>
+                      <span className="meter-pct-num">{score}%</span>
+                    </div>
+                  </div>
+
+                  <div className="mobile-card-actions">
+                    <Link href={`/uav/${e.id}`} className="btn-table-action" style={{ background: "#0ea5e9", color: "#061016", flex: 1, justifyContent: "center" }}>
+                      Console →
+                    </Link>
+                    <Link href={`/uav/${e.id}/twin3d`} className="btn-table-action" style={{ flex: 1, justifyContent: "center" }}>
+                      3D Twin ◈
+                    </Link>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Card 4: Network / Sortie Activity Map */}
@@ -486,6 +555,8 @@ export function DashboardOverview({ initialEngines }: Props) {
           </div>
         </div>
       </div>
+
+      <AiScanModal isOpen={scanModalOpen} onClose={() => setScanModalOpen(false)} />
     </div>
   );
 }

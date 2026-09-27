@@ -19,11 +19,14 @@ export function Sidebar({ onOpenGuide }: Props) {
     <aside className="app-sidebar">
       {/* Prominent Logo & Brand (Outside navbar, big and prominent - Point 16) */}
       <div className="sidebar-brand">
-        <div className="brand-logo-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="2" />
-            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-          </svg>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <img src="/drdo-logo.png" alt="DRDO" style={{ width: "36px", height: "36px", objectFit: "contain" }} />
+          <div className="brand-logo-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="2" />
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+            </svg>
+          </div>
         </div>
         <div className="brand-text">
           <div className="brand-title">

@@ -246,68 +246,76 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
   return (
     <div className="controls">
       <div className="control-bar">
-        <select value={faultType} onChange={(e) => setFaultType(e.target.value)}>
-          {FAULT_TYPES.map((f) => (
-            <option key={f} value={f}>
-              {f.replace(/_/g, " ")}
-              {injected.includes(f) ? " ✓" : ""}
-            </option>
-          ))}
-        </select>
-        {perCylinder && (
-          <span className="mono hint">cyl 3 (fixed)</span>
-        )}
-        <input
-          type="range"
-          min={0.1}
-          max={1}
-          step={0.1}
-          value={severity}
-          onChange={(e) => {
-            recordActivity();
-            setSeverity(Number(e.target.value));
-          }}
-        />
-        <span className="mono">{Math.round(severity * 100)}%</span>
-        <button className="btn" onClick={() => run(() => onInjectFault(faultType, severity))} disabled={busy}>
-          {alreadyActive ? "Update severity" : "Inject fault"}
-        </button>
-        <button className="btn" onClick={() => run(onClearFaults)} disabled={busy || injected.length === 0}>
-          Clear all
-        </button>
+        <div className="control-group-fault">
+          <select value={faultType} onChange={(e) => setFaultType(e.target.value)}>
+            {FAULT_TYPES.map((f) => (
+              <option key={f} value={f}>
+                {f.replace(/_/g, " ")}
+                {injected.includes(f) ? " ✓" : ""}
+              </option>
+            ))}
+          </select>
+          {perCylinder && (
+            <span className="mono hint">cyl 3 (fixed)</span>
+          )}
+          <div className="control-slider-box">
+            <input
+              type="range"
+              min={0.1}
+              max={1}
+              step={0.1}
+              value={severity}
+              onChange={(e) => {
+                recordActivity();
+                setSeverity(Number(e.target.value));
+              }}
+            />
+            <span className="mono">{Math.round(severity * 100)}%</span>
+          </div>
+          <div className="fault-btn-group">
+            <button className="btn" onClick={() => run(() => onInjectFault(faultType, severity))} disabled={busy}>
+              {alreadyActive ? "Update severity" : "Inject fault"}
+            </button>
+            <button className="btn" onClick={() => run(onClearFaults)} disabled={busy || injected.length === 0}>
+              Clear all
+            </button>
+          </div>
+        </div>
 
         <div className="spacer" />
 
-        {/* Idle Auto-Kill Switch & Live Countdown Badge */}
-        <div className="idle-control-cluster">
-          <button
-            type="button"
-            className={`btn btn-toggle-switch ${idleKillEnabled ? "active" : ""}`}
-            onClick={toggleIdleKill}
-            title={idleKillEnabled ? "Auto-kill on 2m idle: ON (Saves Railway credits)" : "Auto-kill on 2m idle: OFF"}
-          >
-            <span className="switch-track">
-              <span className="switch-thumb" />
-            </span>
-            <span className="switch-label">2m Auto-kill</span>
-          </button>
-
-          {idleKillEnabled ? (
-            <div
-              className={`idle-countdown-pill ${secondsRemaining <= 30 ? "warning" : ""}`}
-              title="Time until simulator auto-kills due to inactivity (resets on interaction)"
+        {/* Action Controls & Stop Sortie */}
+        <div className="control-group-actions">
+          <div className="idle-control-cluster">
+            <button
+              type="button"
+              className={`btn btn-toggle-switch ${idleKillEnabled ? "active" : ""}`}
+              onClick={toggleIdleKill}
+              title={idleKillEnabled ? "Auto-kill on 2m idle: ON (Saves Railway credits)" : "Auto-kill on 2m idle: OFF"}
             >
-              <span className="pill-dot" />
-              <span>Idle: {formatCountdown(secondsRemaining)}</span>
-            </div>
-          ) : (
-            <span className="idle-off-badge">Off</span>
-          )}
-        </div>
+              <span className="switch-track">
+                <span className="switch-thumb" />
+              </span>
+              <span className="switch-label">2m Auto-kill</span>
+            </button>
 
-        <button className="btn btn-danger-action" onClick={() => run(onStop)} disabled={busy}>
-          Stop sortie
-        </button>
+            {idleKillEnabled ? (
+              <div
+                className={`idle-countdown-pill ${secondsRemaining <= 30 ? "warning" : ""}`}
+                title="Time until simulator auto-kills due to inactivity (resets on interaction)"
+              >
+                <span className="pill-dot" />
+                <span>Idle: {formatCountdown(secondsRemaining)}</span>
+              </div>
+            ) : (
+              <span className="idle-off-badge">Off</span>
+            )}
+          </div>
+
+          <button className="btn btn-danger-action" onClick={() => run(onStop)} disabled={busy}>
+            Stop sortie
+          </button>
+        </div>
       </div>
 
       <div className="injected-row">

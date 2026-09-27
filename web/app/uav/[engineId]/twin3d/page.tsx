@@ -123,7 +123,8 @@ export default function Twin3DPage() {
           ← 2D Console
         </Link>
 
-        <div className="topbar-tail">
+        <div className="topbar-tail" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <img src="/drdo-logo.png" alt="DRDO" style={{ height: "28px", width: "auto", objectFit: "contain" }} />
           <span>{engine.tail}</span>
           <span className="topbar-engine-model">[{engine.model}]</span>
         </div>
