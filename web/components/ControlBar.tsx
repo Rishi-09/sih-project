@@ -34,6 +34,7 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
   const [severity, setSeverity] = useState(0.6);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
   // Point 8: Instantaneous launch feedback state
   const [launchStage, setLaunchStage] = useState<"idle" | "launching" | "spooling">("idle");
@@ -273,10 +274,31 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
             <span className="mono">{Math.round(severity * 100)}%</span>
           </div>
           <div className="fault-btn-group">
-            <button className="btn" onClick={() => run(() => onInjectFault(faultType, severity))} disabled={busy}>
+            <button
+              className="btn"
+              onClick={() =>
+                run(async () => {
+                  await onInjectFault(faultType, severity);
+                  setFeedbackMsg(`✓ Injected "${faultType.replace(/_/g, " ")}" at ${Math.round(severity * 100)}% severity`);
+                  setTimeout(() => setFeedbackMsg(null), 5000);
+                })
+              }
+              disabled={busy}
+              style={alreadyActive ? { borderColor: "#ef4444", color: "#fca5a5" } : {}}
+            >
               {alreadyActive ? "Update severity" : "Inject fault"}
             </button>
-            <button className="btn" onClick={() => run(onClearFaults)} disabled={busy || injected.length === 0}>
+            <button
+              className="btn"
+              onClick={() =>
+                run(async () => {
+                  await onClearFaults();
+                  setFeedbackMsg("✓ Cleared all active faults");
+                  setTimeout(() => setFeedbackMsg(null), 4000);
+                })
+              }
+              disabled={busy || injected.length === 0}
+            >
               Clear all
             </button>
           </div>
@@ -318,14 +340,44 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
         </div>
       </div>
 
+      {feedbackMsg && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: "6px 12px",
+            borderRadius: "6px",
+            background: "rgba(16, 185, 129, 0.15)",
+            border: "1px solid rgba(16, 185, 129, 0.35)",
+            color: "#34d399",
+            fontSize: "12px",
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+          }}
+        >
+          <span>⚡</span>
+          <span>{feedbackMsg}</span>
+        </div>
+      )}
+
       <div className="injected-row">
         <span className="injected-cap">Active faults</span>
         {injected.length === 0 ? (
           <span className="hint">none — engine is healthy</span>
         ) : (
           injected.map((f) => (
-            <span className="injected-chip" key={f}>
-              {f.replace(/_/g, " ")}
+            <span
+              className="injected-chip"
+              key={f}
+              style={{
+                background: "rgba(239, 68, 68, 0.2)",
+                borderColor: "rgba(239, 68, 68, 0.5)",
+                color: "#fca5a5",
+                fontWeight: 700,
+              }}
+            >
+              ⚠️ {f.replace(/_/g, " ")}
             </span>
           ))
         )}

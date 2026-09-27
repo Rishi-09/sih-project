@@ -22,6 +22,7 @@ export default function ConsolePage() {
   const [engine, setEngine] = useState<EngineSummary | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [loadingEngine, setLoadingEngine] = useState(true);
+  const [forceTelemetryView, setForceTelemetryView] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +65,7 @@ export default function ConsolePage() {
   async function handleStart(scenario: string) {
     const { runId: newRunId } = await api.startRun(engineId, scenario);
     setRunId(newRunId);
+    setForceTelemetryView(false);
     try {
       sessionStorage.setItem(
         "active_sortie",
@@ -86,6 +88,7 @@ export default function ConsolePage() {
     }
     setRunId(null);
     setRunDead(false);
+    setForceTelemetryView(false);
     try {
       sessionStorage.removeItem("active_sortie");
     } catch {}
@@ -217,12 +220,45 @@ export default function ConsolePage() {
             </div>
           </div>
         </>
-      ) : !frame || frame.phase === "startup" || frame.phase === "taxi" || frame.mission?.recommendation === "assessing" ? (
+      ) : !frame ? (
         <>
           <div className="panel">
             <ControlBar
               runId={runId}
-              injected={frame?.injectedFaults ?? []}
+              injected={[]}
+              onStart={handleStart}
+              onStop={handleStop}
+              onInjectFault={handleInjectFault}
+              onClearFaults={handleClearFaults}
+            />
+          </div>
+
+          <StartupEngageConsole
+            engine={engine}
+            runId={runId}
+            frame={null}
+            onExploreBackground={() => {
+              try {
+                sessionStorage.setItem(
+                  "active_sortie",
+                  JSON.stringify({
+                    runId,
+                    engineId: engine.id,
+                    tail: engine.tail,
+                    startedAt: Date.now(),
+                  })
+                );
+              } catch {}
+              router.push("/fleet");
+            }}
+          />
+        </>
+      ) : (frame.phase === "startup" || frame.phase === "taxi") && (frame.injectedFaults?.length ?? 0) === 0 && !forceTelemetryView ? (
+        <>
+          <div className="panel">
+            <ControlBar
+              runId={runId}
+              injected={frame.injectedFaults ?? []}
               onStart={handleStart}
               onStop={handleStop}
               onInjectFault={handleInjectFault}
@@ -248,10 +284,94 @@ export default function ConsolePage() {
               } catch {}
               router.push("/fleet");
             }}
+            onViewTelemetry={() => setForceTelemetryView(true)}
           />
         </>
       ) : (
         <>
+          {/* Active Fault Warning Banner */}
+          {(frame.injectedFaults?.length ?? 0) > 0 && (
+            <div
+              style={{
+                background: "rgba(239, 68, 68, 0.15)",
+                border: "1px solid rgba(239, 68, 68, 0.45)",
+                borderRadius: "8px",
+                padding: "12px 18px",
+                marginBottom: "16px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "12px",
+                animation: "fade-in 0.2s ease-out",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "20px" }}>⚠️</span>
+                <div>
+                  <div style={{ color: "#fca5a5", fontSize: "13px", fontWeight: 700 }}>
+                    ACTIVE SIMULATED FAULT: {frame.injectedFaults.map(f => f.replace(/_/g, " ")).join(", ").toUpperCase()}
+                  </div>
+                  <div style={{ color: "#cbd5e1", fontSize: "12px" }}>
+                    Failure mode is actively distorting cylinder telemetry. Observe limiter margin consumption and AI derate recommendation below.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleClearFaults}
+                style={{
+                  background: "#7f1d1d",
+                  color: "#fecaca",
+                  border: "1px solid rgba(248, 113, 113, 0.4)",
+                  padding: "6px 14px",
+                  borderRadius: "6px",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Clear Faults ✕
+              </button>
+            </div>
+          )}
+
+          {/* Toggle back to Warmup if in startup/taxi */}
+          {forceTelemetryView && (frame.phase === "startup" || frame.phase === "taxi") && (frame.injectedFaults?.length ?? 0) === 0 && (
+            <div
+              style={{
+                background: "rgba(56, 189, 248, 0.08)",
+                border: "1px solid rgba(56, 189, 248, 0.25)",
+                borderRadius: "8px",
+                padding: "8px 14px",
+                marginBottom: "14px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <span style={{ fontSize: "12px", color: "#94a3b8" }}>
+                Viewing live telemetry during engine ground warmup.
+              </span>
+              <button
+                type="button"
+                onClick={() => setForceTelemetryView(false)}
+                style={{
+                  background: "transparent",
+                  border: "1px solid rgba(56, 189, 248, 0.4)",
+                  color: "#38bdf8",
+                  padding: "4px 10px",
+                  borderRadius: "4px",
+                  fontSize: "11.5px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                ← Back to Spooling Checklist
+              </button>
+            </div>
+          )}
+
           <MissionStatus mission={frame.mission} />
 
           <div className="grid-evidence">
@@ -271,7 +391,7 @@ export default function ConsolePage() {
           <div className="panel panel-controls">
             <ControlBar
               runId={runId}
-              injected={frame.injectedFaults}
+              injected={frame.injectedFaults ?? []}
               onStart={handleStart}
               onStop={handleStop}
               onInjectFault={handleInjectFault}

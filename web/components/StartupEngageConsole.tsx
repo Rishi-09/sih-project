@@ -9,11 +9,12 @@ interface Props {
   runId: string;
   frame: TickFrame | null;
   onExploreBackground: () => void;
+  onViewTelemetry?: () => void;
 }
 
 const TOTAL_STARTUP_SECONDS = 75;
 
-export function StartupEngageConsole({ engine, runId, frame, onExploreBackground }: Props) {
+export function StartupEngageConsole({ engine, runId, frame, onExploreBackground, onViewTelemetry }: Props) {
   const [elapsed, setElapsed] = useState(0);
   const [tachRpm, setTachRpm] = useState(1200);
 
@@ -65,28 +66,53 @@ export function StartupEngageConsole({ engine, runId, frame, onExploreBackground
           </div>
         </div>
 
-        {/* Explore in Background CTA */}
-        <button
-          type="button"
-          onClick={onExploreBackground}
-          style={{
-            background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
-            color: "#ffffff",
-            border: "1px solid rgba(56, 189, 248, 0.4)",
-            padding: "9px 18px",
-            borderRadius: "8px",
-            fontSize: "12.5px",
-            fontWeight: 700,
-            cursor: "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-            boxShadow: "0 4px 14px rgba(2, 132, 199, 0.35)",
-            transition: "all 0.15s ease",
-          }}
-        >
-          <span>🚀 Start in Background &amp; Explore</span>
-        </button>
+        {/* Action CTAs */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          {onViewTelemetry && (
+            <button
+              type="button"
+              onClick={onViewTelemetry}
+              style={{
+                background: "#1e293b",
+                color: "#38bdf8",
+                border: "1px solid rgba(56, 189, 248, 0.4)",
+                padding: "9px 16px",
+                borderRadius: "8px",
+                fontSize: "12.5px",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <span>📊 View Live Telemetry</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onExploreBackground}
+            style={{
+              background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
+              color: "#ffffff",
+              border: "1px solid rgba(56, 189, 248, 0.4)",
+              padding: "9px 18px",
+              borderRadius: "8px",
+              fontSize: "12.5px",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              boxShadow: "0 4px 14px rgba(2, 132, 199, 0.35)",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <span>🚀 Start in Background &amp; Explore</span>
+          </button>
+        </div>
       </div>
 
       {/* Progress & Countdown Grid */}

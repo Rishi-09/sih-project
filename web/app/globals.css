@@ -909,4 +909,128 @@ code, .mono { font-family: var(--font-mono); }
   flex-shrink: 0 !important;
 }
 
+/* 3D Twin HUD Viewport Overlay & Control Mode Buttons */
+.hud-tactical-reticle-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
+.hud-corner-tag {
+  pointer-events: auto;
+}
+
+.hud-tl {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: rgba(10, 15, 20, 0.85);
+  backdrop-filter: blur(6px);
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  max-width: fit-content;
+}
+
+.hud-live-tag {
+  font-size: 11px;
+  font-weight: 800;
+  color: #38bdf8;
+  letter-spacing: 0.05em;
+}
+
+.hud-callout {
+  font-size: 9.5px;
+  color: #64748b;
+  font-family: var(--font-mono, monospace);
+}
+
+.hud-controls-top-right {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  z-index: 20;
+  pointer-events: auto;
+}
+
+.render-mode-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(10, 15, 20, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 3px 5px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.btn-hud-mode {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-hud-mode:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.btn-hud-mode.active {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.5);
+  color: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.35);
+}
+
+.btn-hud-asset.active {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #34d399;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.35);
+}
+
+.hud-corner-tag.hud-bl {
+  align-self: flex-start;
+  margin-top: auto;
+  font-size: 9.5px;
+  color: #475569;
+  font-family: var(--font-mono, monospace);
+  background: rgba(10, 15, 20, 0.7);
+  padding: 3px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .hud-controls-top-right {
+    top: 6px;
+    right: 6px;
+    gap: 4px;
+  }
+  .btn-hud-mode {
+    font-size: 9px;
+    padding: 2px 5px;
+  }
+}
+
 
