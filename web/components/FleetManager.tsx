@@ -251,7 +251,7 @@ export function FleetManager({ initialEngines }: Props) {
                   </div>
 
                   <div className="fleet-card-footer">
-                    <span className="btn-link">Console →</span>
+                    <span className="btn-action-console">Console →</span>
                     <Link
                       href={`/uav/${e.id}/twin3d`}
                       className="twin3d-pill"

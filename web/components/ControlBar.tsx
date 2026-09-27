@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import catalog from "@/lib/faults.json";
+import { api } from "@/lib/api";
 
 // The fault menu comes from the same catalog the simulator injects from
 // (twin2/catalog.py -> web/lib/faults.json). Engine faults degrade a physical
@@ -36,6 +37,9 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
   const [severity, setSeverity] = useState(0.6);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Point 8: Instantaneous launch feedback state
+  const [launchStage, setLaunchStage] = useState<"idle" | "launching" | "spooling">("idle");
 
   // Auto-kill on idle settings & timer
   const [idleKillEnabled, setIdleKillEnabled] = useState<boolean>(() => {
@@ -75,13 +79,14 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
 
     const handleUserActivity = () => {
       const now = Date.now();
-      // Throttle activity updates to at most once per 500ms
       if (now - lastActivityRef.current > 500) {
         recordActivity();
       }
     };
 
-    const events = ["pointermove", "pointerdown", "keydown", "wheel", "touchstart", "scroll"];
+    // Only intentional user inputs (click, touch, keydown) reset the idle activity timer.
+    // Passive mouse hovering (pointermove) or scrolling no longer resets it.
+    const events = ["pointerdown", "keydown", "touchstart"];
     events.forEach((evt) => window.addEventListener(evt, handleUserActivity, { passive: true }));
 
     return () => {
@@ -100,8 +105,9 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
 
       if (remaining <= 0) {
         clearInterval(interval);
-        setIdleNotice("Simulator auto-stopped after 2 min of inactivity to conserve Railway credits.");
+        setIdleNotice("Simulator auto-stopped after 2 min of inactivity to conserve compute resources.");
         onStopRef.current();
+        api.stopRun(runId).catch(() => {});
       }
     }, 1000);
 
@@ -122,8 +128,20 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
       setError((e as Error).message);
     } finally {
       setBusy(false);
+      setLaunchStage("idle");
     }
   }
+
+  const handleStartSortie = () => {
+    setIdleNotice(null);
+    // Point 8: Instantaneous state change within 0ms
+    setLaunchStage("launching");
+    setTimeout(() => {
+      setLaunchStage("spooling");
+    }, 700);
+
+    run(() => onStart(scenario));
+  };
 
   const formatCountdown = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -135,19 +153,37 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
     return (
       <div className="controls">
         <div className="control-bar">
-          <select value={scenario} onChange={(e) => setScenario(e.target.value)}>
-            <option value="S1">Nominal Flight</option>
-            <option value="custom">Custom Flight</option>
+          <select value={scenario} onChange={(e) => setScenario(e.target.value)} disabled={busy}>
+            <option value="S1">S1 — Nominal sortie</option>
+            <option value="custom">Custom mission</option>
           </select>
+
+          {/* Point 8: Instantaneous visual feedback button */}
           <button
             className="btn btn-primary"
-            onClick={() => {
-              setIdleNotice(null);
-              run(() => onStart(scenario));
-            }}
+            onClick={handleStartSortie}
             disabled={busy}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              minWidth: "150px",
+              justifyContent: "center",
+            }}
           >
-            Start Flight
+            {launchStage === "launching" ? (
+              <>
+                <span className="spinner-icon-anim">⚡</span>
+                <span>Connecting FADEC...</span>
+              </>
+            ) : launchStage === "spooling" ? (
+              <>
+                <span className="spinner-icon-anim">⚙️</span>
+                <span>Spooling Engine...</span>
+              </>
+            ) : (
+              <span>Start sortie</span>
+            )}
           </button>
 
           <div className="spacer" />
@@ -166,6 +202,38 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
           </button>
         </div>
 
+        {/* Point 8: Live launch step progress indicator during the 2-sec startup */}
+        {launchStage !== "idle" && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: "8px 14px",
+              background: "rgba(16, 185, 129, 0.1)",
+              border: "1px solid rgba(52, 211, 153, 0.3)",
+              borderRadius: "8px",
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              fontSize: "12px",
+              color: "#34d399",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span>✓</span>
+              <span>1. FADEC Handshake</span>
+            </div>
+            <span>→</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}>
+              <span className="spinner-icon-anim">✦</span>
+              <span>2. Initializing Rotax 915 Physics Simulator</span>
+            </div>
+            <span>→</span>
+            <div style={{ color: "#64748b" }}>
+              <span>3. 1 Hz Stream</span>
+            </div>
+          </div>
+        )}
+
         {idleNotice && (
           <div className="idle-kill-alert">
             <span className="alert-icon">⚡</span>
@@ -173,6 +241,8 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
             <button className="close-btn" onClick={() => setIdleNotice(null)}>×</button>
           </div>
         )}
+
+        {error && <div className="control-error">{error}</div>}
       </div>
     );
   }
@@ -180,85 +250,93 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
   return (
     <div className="controls">
       <div className="control-bar">
-        <select value={faultType} onChange={(e) => setFaultType(e.target.value)}>
-          <optgroup label="Engine faults (health factor degrades)">
-            {ENGINE_MENU.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.label}
-                {injected.includes(f.id) ? " ✓" : ""}
-              </option>
-            ))}
-          </optgroup>
-          <optgroup label="Sensor faults (reading lies, engine fine)">
-            {SENSOR_MENU.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.label}
-                {injected.includes(f.id) ? " ✓" : ""}
-              </option>
-            ))}
-          </optgroup>
-        </select>
-        {perCylinder && (
-          <select value={cylinder} onChange={(e) => setCylinder(Number(e.target.value))} aria-label="Cylinder">
-            {[1, 2, 3, 4].map((c) => (
-              <option key={c} value={c}>
-                cyl {c}
-                {injected.includes(`weak_cylinder_cyl${c}`) ? " ✓" : ""}
-              </option>
-            ))}
+        <div className="control-group-fault">
+          <select value={faultType} onChange={(e) => setFaultType(e.target.value)}>
+            <optgroup label="Engine faults (health factor degrades)">
+              {ENGINE_MENU.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                  {injected.includes(f.id) ? " ✓" : ""}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Sensor faults (reading lies, engine fine)">
+              {SENSOR_MENU.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                  {injected.includes(f.id) ? " ✓" : ""}
+                </option>
+              ))}
+            </optgroup>
           </select>
-        )}
-        <input
-          type="range"
-          min={0.1}
-          max={1}
-          step={0.1}
-          value={severity}
-          onChange={(e) => {
-            recordActivity();
-            setSeverity(Number(e.target.value));
-          }}
-        />
-        <span className="mono">{Math.round(severity * 100)}%</span>
-        <button className="btn" onClick={() => run(() => onInjectFault(faultId, severity))} disabled={busy}>
-          {alreadyActive ? "Update severity" : "Inject fault"}
-        </button>
-        <button className="btn" onClick={() => run(onClearFaults)} disabled={busy || injected.length === 0}>
-          Clear all
-        </button>
+          {perCylinder && (
+            <select value={cylinder} onChange={(e) => setCylinder(Number(e.target.value))} aria-label="Cylinder">
+              {[1, 2, 3, 4].map((c) => (
+                <option key={c} value={c}>
+                  cyl {c}
+                  {injected.includes(`weak_cylinder_cyl${c}`) ? " ✓" : ""}
+                </option>
+              ))}
+            </select>
+          )}
+          <div className="control-slider-box">
+            <input
+              type="range"
+              min={0.1}
+              max={1}
+              step={0.1}
+              value={severity}
+              onChange={(e) => {
+                recordActivity();
+                setSeverity(Number(e.target.value));
+              }}
+            />
+            <span className="mono">{Math.round(severity * 100)}%</span>
+          </div>
+          <div className="fault-btn-group">
+            <button className="btn" onClick={() => run(() => onInjectFault(faultId, severity))} disabled={busy}>
+              {alreadyActive ? "Update severity" : "Inject fault"}
+            </button>
+            <button className="btn" onClick={() => run(onClearFaults)} disabled={busy || injected.length === 0}>
+              Clear all
+            </button>
+          </div>
+        </div>
 
         <div className="spacer" />
 
-        {/* Idle Auto-Kill Switch & Live Countdown Badge */}
-        <div className="idle-control-cluster">
-          <button
-            type="button"
-            className={`btn btn-toggle-switch ${idleKillEnabled ? "active" : ""}`}
-            onClick={toggleIdleKill}
-            title={idleKillEnabled ? "Auto-kill on 2m idle: ON (Saves Railway credits)" : "Auto-kill on 2m idle: OFF"}
-          >
-            <span className="switch-track">
-              <span className="switch-thumb" />
-            </span>
-            <span className="switch-label">2m Auto-kill</span>
-          </button>
-
-          {idleKillEnabled ? (
-            <div
-              className={`idle-countdown-pill ${secondsRemaining <= 30 ? "warning" : ""}`}
-              title="Time until simulator auto-kills due to inactivity (resets on interaction)"
+        {/* Action Controls & Stop Sortie */}
+        <div className="control-group-actions">
+          <div className="idle-control-cluster">
+            <button
+              type="button"
+              className={`btn btn-toggle-switch ${idleKillEnabled ? "active" : ""}`}
+              onClick={toggleIdleKill}
+              title={idleKillEnabled ? "Auto-kill on 2m idle: ON (Saves Railway credits)" : "Auto-kill on 2m idle: OFF"}
             >
-              <span className="pill-dot" />
-              <span>Idle: {formatCountdown(secondsRemaining)}</span>
-            </div>
-          ) : (
-            <span className="idle-off-badge">Off</span>
-          )}
-        </div>
+              <span className="switch-track">
+                <span className="switch-thumb" />
+              </span>
+              <span className="switch-label">2m Auto-kill</span>
+            </button>
 
-        <button className="btn btn-danger-action" onClick={() => run(onStop)} disabled={busy}>
-          End Flight
-        </button>
+            {idleKillEnabled ? (
+              <div
+                className={`idle-countdown-pill ${secondsRemaining <= 30 ? "warning" : ""}`}
+                title="Time until simulator auto-kills due to inactivity (resets on interaction)"
+              >
+                <span className="pill-dot" />
+                <span>Idle: {formatCountdown(secondsRemaining)}</span>
+              </div>
+            ) : (
+              <span className="idle-off-badge">Off</span>
+            )}
+          </div>
+
+          <button className="btn btn-danger-action" onClick={() => run(onStop)} disabled={busy}>
+            Stop sortie
+          </button>
+        </div>
       </div>
 
       <div className="injected-row">

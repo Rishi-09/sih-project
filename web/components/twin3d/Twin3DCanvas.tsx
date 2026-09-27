@@ -550,6 +550,51 @@ export function Twin3DCanvas({ frame, autoRotate = true, isFlightActive = false 
           </div>
         </div>
 
+        {/* Real-time FLIR Thermal Heatmap Legend */}
+        {renderMode === "flir_thermal" && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: "44px",
+              left: "14px",
+              zIndex: 20,
+              background: "rgba(10, 15, 20, 0.92)",
+              border: "1px solid rgba(239, 68, 68, 0.4)",
+              borderRadius: "6px",
+              padding: "8px 12px",
+              fontSize: "11px",
+              color: "#e2e8f0",
+              minWidth: "260px",
+              boxShadow: "0 4px 16px rgba(0, 0, 0, 0.5)",
+            }}
+          >
+            <div style={{ fontWeight: 700, color: "#fca5a5", marginBottom: 4, display: "flex", justifyContent: "space-between" }}>
+              <span>THERMAL HEATMAP SCALE</span>
+              <span style={{ fontSize: "10px", color: "#64748b" }}>FLIR INFRARED</span>
+            </div>
+            <div
+              style={{
+                height: "8px",
+                borderRadius: "3px",
+                background: "linear-gradient(to right, #001f5c, #00d4ff, #00ff66, #ffdd00, #ff5500, #ff0000)",
+                marginBottom: "4px",
+              }}
+            />
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#94a3b8", fontFamily: "var(--font-mono, monospace)" }}>
+              <span>20°C</span>
+              <span>450°C</span>
+              <span>950°C (EGT Peak)</span>
+            </div>
+            {frame?.sensors && (
+              <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.1)", display: "flex", gap: 10, fontSize: "10px" }}>
+                <span>EGT: <strong style={{ color: "#ff5500" }}>{frame.sensors.egt_1?.toFixed(0) ?? 820}°C</strong></span>
+                <span>CHT: <strong style={{ color: "#ffdd00" }}>{frame.sensors.cht_1?.toFixed(0) ?? 112}°C</strong></span>
+                <span>Oil: <strong style={{ color: "#00ff66" }}>{frame.sensors.oil_temp_c?.toFixed(0) ?? 96}°C</strong></span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Bottom Corner Control Hints */}
         <div className="hud-corner-tag hud-bl">
           <span>

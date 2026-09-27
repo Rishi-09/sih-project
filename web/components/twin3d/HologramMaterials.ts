@@ -186,7 +186,7 @@ export class HologramMaterialFactory {
       emissive: accent.clone(),
       emissiveIntensity: 0.0,
       side: THREE.FrontSide,
-      transparent: true,
+      transparent: false,
       depthWrite: true,
       opacity: 1.0,
     }) as HoloMaterial;

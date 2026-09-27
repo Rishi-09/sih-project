@@ -10,7 +10,8 @@ import { MissionStatus } from "@/components/MissionStatus";
 import { LimiterList } from "@/components/LimiterList";
 import { WhatIfPlanner } from "@/components/WhatIfPlanner";
 import { DetailTabs } from "@/components/DetailTabs";
-import { QuickMetricsStrip } from "@/components/QuickMetricsStrip";
+import { ControlBar } from "@/components/ControlBar";
+import { MiniTwinPreview } from "@/components/MiniTwinPreview";
 
 export default function ConsolePage() {
   const params = useParams<{ engineId: string }>();
@@ -74,17 +75,37 @@ export default function ConsolePage() {
     setRunDead(false);
   }
 
+  async function handleInjectFault(type: string, severity: number, cylinder?: number) {
+    if (!runId) return;
+    await api.injectFault(runId, type, severity, 0, cylinder);
+  }
+
+  async function handleClearFaults() {
+    if (!runId) return;
+    await api.clearFaults(runId);
+  }
+
+  // Point 7: Instant skeleton loader instead of slow blank text
   if (loadingEngine) {
-    return <main className="console">Loading telemetry...</main>;
+    return (
+      <main className="console" style={{ padding: "28px" }}>
+        <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "20px" }}>
+          <div className="skeleton-box" style={{ width: "120px", height: "36px", borderRadius: "8px" }} />
+          <div className="skeleton-box" style={{ width: "200px", height: "36px", borderRadius: "8px" }} />
+        </div>
+        <div className="skeleton-box" style={{ width: "100%", height: "200px", borderRadius: "12px", marginBottom: "20px" }} />
+        <div className="skeleton-box" style={{ width: "100%", height: "320px", borderRadius: "12px" }} />
+      </main>
+    );
   }
 
   if (!engine) {
     return (
       <main className="console">
-        <Link href="/" className="back">
-          ← Fleet
+        <Link href="/fleet" className="btn-back-action">
+          ← Back to Fleet
         </Link>
-        <div className="empty-state">
+        <div className="empty-state" style={{ marginTop: "24px" }}>
           Engine not found. Is the backend seeded? (<code>npm run seed</code> in <code>server/</code>)
         </div>
       </main>
@@ -96,71 +117,106 @@ export default function ConsolePage() {
   return (
     <main className="console">
       <header className="console-header">
-        <Link href="/" className="drdo-topbar-link" title="Return to DRDO Fleet Command">
-          <img src="/drdo-logo.png" alt="DRDO Emblem" className="drdo-topbar-img" />
+        {/* Point 12: Prominent Back Button */}
+        <Link href="/fleet" className="btn-back-action">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          <span>Fleet Overview</span>
         </Link>
-        <Link href="/" className="back">
-          ← Fleet
-        </Link>
-        <div className="tail">{engine.tail}</div>
+
+        <div className="tail" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <img src="/drdo-logo.png" alt="DRDO" style={{ height: "30px", width: "auto", objectFit: "contain" }} />
+          <span>{engine.tail}</span>
+          <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>[{engine.model}]</span>
+        </div>
+
         {frame && <div className="phase-pill">{frame.phase}</div>}
         <div className="spacer" />
 
         {frame && (
-          <div className="ehi-chip" title="Engine health index">
-            <span className="ehi-num">{frame.health.ehi === null ? "—" : `${Math.round(frame.health.ehi)}%`}</span>
-            <span className="ehi-cap">Health</span>
+          <div className="ehi-chip" title="Engine health index — condition now">
+            <span className="ehi-num">{frame.health.ehi === null ? "—" : Math.round(frame.health.ehi)}</span>
+            <span className="ehi-cap">health</span>
           </div>
         )}
+
         {runId && <span className={`conn-status conn-${twin.status}`}>{twin.status}</span>}
-        {runId && (
-          <button
-            type="button"
-            className="btn btn-danger-mini"
-            onClick={handleStop}
-            title="Terminate active sortie"
-          >
-            End Sortie
-          </button>
-        )}
-        <Link href={`/uav/${engineId}/twin3d`} className="btn btn-twin3d-nav" title="Switch to 3D Digital Twin View">
-          ⬢ 3D Digital Twin
+
+        {/* 3D Twin CTA button */}
+        <Link href={`/uav/${engineId}/twin3d`} className="btn-action-twin">
+          <span>3D Twin</span>
+          <span>◈</span>
         </Link>
       </header>
 
-      {/* Real telemetry metrics bus */}
-      <QuickMetricsStrip frame={frame} tail={engine.tail} />
+      {/* Point 3: Default 3D Engine View embedded in Console Page! */}
+      <MiniTwinPreview engineId={engineId} frame={frame} />
 
       {!runId ? (
-        <div className="empty-state-card">
-          <div className="empty-state-title">Sortie Standby</div>
-          <div className="empty-state-sub">
-            No active flight sortie running for {engine.tail}. Launch telemetry to monitor live digital twin.
+        <>
+          <div className="panel">
+            <ControlBar
+              runId={runId}
+              injected={[]}
+              onStart={handleStart}
+              onStop={handleStop}
+              onInjectFault={handleInjectFault}
+              onClearFaults={handleClearFaults}
+            />
           </div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => handleStart("S1")}
-            style={{ marginTop: 14 }}
-          >
-            Launch Sortie (Cruise)
-          </button>
-        </div>
+          <div className="empty-state" style={{ marginTop: 14 }}>
+            No active sortie for {engine.tail}. Start one above to bring live physics and ML diagnostics online.
+          </div>
+        </>
       ) : !frame ? (
-        <div className="empty-state-card">
-          <div className="empty-state-title">
-            {runDead ? "Sortie Terminated" : "Connecting to Live Telemetry…"}
+        <>
+          <div className="panel">
+            <ControlBar
+              runId={runId}
+              injected={[]}
+              onStart={handleStart}
+              onStop={handleStop}
+              onInjectFault={handleInjectFault}
+              onClearFaults={handleClearFaults}
+            />
           </div>
-          <div className="empty-state-sub">
-            {runDead ? "This sortie is no longer active on the server." : "Awaiting telemetry stream at 20 Hz…"}
+
+          {/* Point 7: Interactive Telemetry Connection Card */}
+          <div
+            className="empty-state"
+            style={{
+              marginTop: 14,
+              padding: "24px",
+              background: "#131b22",
+              border: "1px solid rgba(56, 189, 248, 0.2)",
+              borderRadius: "10px",
+              textAlign: "center",
+            }}
+          >
+            {runDead ? (
+              <>
+                <div style={{ color: "#f87171", fontWeight: 700, fontSize: "14px" }}>
+                  Sortie process is no longer active on the server.
+                </div>
+                <div style={{ fontSize: 12.5, marginTop: 8, color: "#94a3b8" }}>
+                  It was likely ended by a server restart. Stop it to clear the console, then start a new one.
+                </div>
+              </>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#38bdf8", fontWeight: 700, fontSize: "14px" }}>
+                  <span className="spinner-icon-anim">⚙️</span>
+                  <span>Connecting to Live 1 Hz Telemetry Stream...</span>
+                </div>
+                <div style={{ fontSize: "12px", color: "#64748b" }}>
+                  Simulator socket handshake in progress. Telemetry frame will appear in seconds.
+                </div>
+              </div>
+            )}
           </div>
-          {runDead && (
-            <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "center" }}>
-              <button type="button" className="btn" onClick={handleStop}>Clear Sortie</button>
-              <button type="button" className="btn btn-primary" onClick={() => handleStart("S1")}>Start New Sortie</button>
-            </div>
-          )}
-        </div>
+        </>
       ) : (
         <div className="console-dashboard">
           <div className="console-col-left">
@@ -182,6 +238,18 @@ export default function ConsolePage() {
 
           <div className="console-col-right">
             <DetailTabs frame={frame} runId={runId} />
+
+            {/* Scenario controls */}
+            <div className="panel panel-controls">
+              <ControlBar
+                runId={runId}
+                injected={frame.injectedFaults}
+                onStart={handleStart}
+                onStop={handleStop}
+                onInjectFault={handleInjectFault}
+                onClearFaults={handleClearFaults}
+              />
+            </div>
           </div>
         </div>
       )}
