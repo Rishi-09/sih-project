@@ -1,562 +1,679 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { EngineSummary } from "@/lib/types";
-import { AiScanModal } from "./AiScanModal";
+import { EngineSummary, ReliabilityLimiter, TickFrame } from "@/lib/types";
+import { api } from "@/lib/api";
+import { useTwinSocket } from "@/lib/socket";
 
 interface Props {
   initialEngines: EngineSummary[];
 }
 
-export function DashboardOverview({ initialEngines }: Props) {
-  const [engines] = useState<EngineSummary[]>(initialEngines);
-  const [scanning, setScanning] = useState(false);
-  const [scanModalOpen, setScanModalOpen] = useState(false);
-  const [healthScore, setHealthScore] = useState(76);
-  const [filterView, setFilterView] = useState("all");
-  const [activeTimeTab, setActiveTimeTab] = useState("1D");
-  const [tooltipData, setTooltipData] = useState<{
-    date: string;
-    actual: number;
-    predicted: number;
-    deviation: string;
-    confidence: string;
-  } | null>({
-    date: "Sep 27, 2026",
-    actual: 42,
-    predicted: 36,
-    deviation: "+17%",
-    confidence: "High",
-  });
+/* -------------------------------------------------------------------------
+   Formatting helpers
+   ---------------------------------------------------------------------- */
 
-  const handleRunScan = () => {
-    setScanning(true);
-    setScanModalOpen(true);
-    setTimeout(() => {
-      setScanning(false);
-      setHealthScore(Math.floor(78 + Math.random() * 8));
-    }, 1500);
-  };
+const SUBSYSTEMS: Array<{ key: keyof TickFrame["health"]["subsystems"]; short: string; label: string }> = [
+  { key: "lubrication", short: "LUB", label: "Lubrication" },
+  { key: "cooling", short: "COOL", label: "Cooling" },
+  { key: "combustion", short: "COMB", label: "Combustion" },
+  { key: "induction", short: "IND", label: "Induction" },
+  { key: "fuel", short: "FUEL", label: "Fuel" },
+  { key: "injection", short: "INJ", label: "Injection" },
+  { key: "mechanical", short: "MECH", label: "Mechanical" },
+  { key: "electrical", short: "ELEC", label: "Electrical" },
+];
 
-  // Generate 26 segments for the arc gauge like in reference image
-  const totalSegments = 26;
-  const activeSegments = Math.round((healthScore / 100) * totalSegments);
+const RECOMMENDATION_COPY: Record<string, { title: string; tone: "ok" | "caution" | "critical" | "idle" }> = {
+  assessing: { title: "Assessing — not enough telemetry yet", tone: "idle" },
+  continue: { title: "Continue as briefed", tone: "ok" },
+  derate: { title: "Derate power", tone: "caution" },
+  return_to_base: { title: "Return to base", tone: "critical" },
+  land_immediately: { title: "Land immediately", tone: "critical" },
+};
 
-  const displayEngines = engines.length > 0 ? engines : [
-    {
-      id: "uav-01",
-      tail: "UAV-01",
-      model: "Rotax 915 iS, 4-cyl boxer, turbo, FADEC",
-      ehi: 88,
-      latestRunId: "run_sample_1",
-      latestRunStatus: "live",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "uav-02",
-      tail: "UAV-02",
-      model: "Rotax 915 iS, 4-cyl boxer, turbo, FADEC",
-      ehi: 62,
-      latestRunId: "run_sample_2",
-      latestRunStatus: "degraded",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "uav-03",
-      tail: "UAV-03",
-      model: "Rotax 915 iS, 4-cyl boxer, turbo, FADEC",
-      ehi: 94,
-      latestRunId: null,
-      latestRunStatus: "idle",
-      createdAt: new Date().toISOString(),
-    },
-  ];
+/** Health tone. Thresholds mirror the caution/critical bands used on the console. */
+function tone(v: number | null | undefined): "ok" | "caution" | "critical" | "unknown" {
+  if (v === null || v === undefined || Number.isNaN(v)) return "unknown";
+  if (v < 50) return "critical";
+  if (v < 70) return "caution";
+  return "ok";
+}
+
+function cellStyle(v: number | null): React.CSSProperties {
+  if (v === null) return { background: "var(--surface)", color: "var(--ink-4)" };
+  if (v < 50) return { background: "rgba(240,90,110,0.45)", color: "#FFE2E6" };
+  if (v < 70) return { background: "rgba(224,168,46,0.40)", color: "#FFF3D6" };
+  if (v < 80) return { background: "rgba(46,154,208,0.20)", color: "#BFD8E6" };
+  if (v < 90) return { background: "rgba(46,154,208,0.45)", color: "#DCEDF7" };
+  return { background: "rgba(46,154,208,0.85)", color: "#04161E" };
+}
+
+function fmtDuration(sec: number | null | undefined): string {
+  if (sec === null || sec === undefined || !Number.isFinite(sec)) return "—";
+  if (sec < 0) return "—";
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  if (m >= 60) return `${Math.floor(m / 60)} h ${m % 60} m`;
+  return `${m} m ${String(s).padStart(2, "0")} s`;
+}
+
+function channelLabel(channel: string): string {
+  const trimmed = channel.replace(/_(c|bar|kpa|lph|pct|rpm)$/i, "").replace(/_/g, " ");
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+function fmt(n: number | null | undefined, digits = 1): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  return n.toFixed(digits);
+}
+
+/* -------------------------------------------------------------------------
+   Residual chart — measured against the nominal twin, from the socket history
+   ---------------------------------------------------------------------- */
+
+function ResidualChart({ history, channel }: { history: TickFrame[]; channel: string }) {
+  const series = useMemo(() => {
+    const pts = history
+      .map((f) => ({ actual: f.sensors?.[channel], expected: f.nominal?.[channel] }))
+      .filter((p) => Number.isFinite(p.actual) && Number.isFinite(p.expected)) as Array<{ actual: number; expected: number }>;
+    return pts.slice(-120);
+  }, [history, channel]);
+
+  if (series.length < 2) {
+    return <div className="empty-note">Waiting for the twin to publish enough frames to draw a trend.</div>;
+  }
+
+  const all = series.flatMap((p) => [p.actual, p.expected]);
+  const lo = Math.min(...all);
+  const hi = Math.max(...all);
+  const pad = (hi - lo) * 0.18 || 1;
+  const min = lo - pad;
+  const max = hi + pad;
+
+  const W = 1000;
+  const H = 300;
+  const x = (i: number) => (i / (series.length - 1)) * W;
+  const y = (v: number) => H - ((v - min) / (max - min)) * H;
+
+  const actualPts = series.map((p, i) => `${x(i).toFixed(1)},${y(p.actual).toFixed(1)}`).join(" ");
+  const expectedPts = series.map((p, i) => `${x(i).toFixed(1)},${y(p.expected).toFixed(1)}`).join(" ");
+  const band =
+    `M${series.map((p, i) => `${x(i).toFixed(1)},${y(p.actual).toFixed(1)}`).join(" L")} ` +
+    `L${series
+      .map((p, i) => `${x(series.length - 1 - i).toFixed(1)},${y(series[series.length - 1 - i].expected).toFixed(1)}`)
+      .join(" L")} Z`;
+
+  const last = series[series.length - 1];
+  const residual = last.actual - last.expected;
 
   return (
-    <div className="dashboard-grid-container">
-      {/* ROW 1: System Health & AI Threat Forecast (Directly matching image) */}
-      <div className="dashboard-row-top">
-        {/* Card 1: System Health */}
-        <div className="dash-card">
-          <div className="card-header-bar">
-            <div className="card-title-cluster">
-              <span className="card-title">System Health</span>
-            </div>
-            <button
-              type="button"
-              className="card-action-btn"
-              onClick={handleRunScan}
-              disabled={scanning}
-            >
-              <span>{scanning ? "Scanning..." : "Run Scan"}</span>
-            </button>
-          </div>
+    <>
+      <div className="legend">
+        <span className="legend-item">
+          <span className="legend-line" style={{ background: "var(--series-1)" }} /> Measured
+        </span>
+        <span className="legend-item">
+          <span className="legend-line" style={{ background: "var(--series-2)" }} /> Twin expected
+        </span>
+        <span
+          className="card-meta"
+          style={{ color: Math.abs(residual) > 1 ? "var(--critical)" : "var(--ink-2)", letterSpacing: 0 }}
+        >
+          residual {residual >= 0 ? "+" : ""}
+          {fmt(residual)}
+        </span>
+      </div>
 
-          {/* Mini metrics: CPU, RAM, Telemetry Rate */}
-          <div className="health-mini-metrics">
-            <div className="metric-pill">
-              <div className="metric-icon-box">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                </svg>
-              </div>
-              <div className="metric-val-wrap">
-                <span className="metric-pct">65%</span>
-                <span className="metric-lbl">CPU USAGE</span>
-              </div>
-            </div>
+      <div className="chart-wrap">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          preserveAspectRatio="none"
+          role="img"
+          aria-label={`${channelLabel(channel)} measured against the twin-expected value, residual ${fmt(residual)}.`}
+        >
+          {[0.25, 0.5, 0.75].map((f) => (
+            <line key={f} x1="0" y1={H * f} x2={W} y2={H * f} stroke="var(--grid-line)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          ))}
+          <path d={band} fill="rgba(240,90,110,0.10)" />
+          <polyline
+            points={expectedPts}
+            fill="none"
+            stroke="var(--series-2)"
+            strokeWidth="2"
+            strokeDasharray="5 4"
+            vectorEffect="non-scaling-stroke"
+          />
+          <polyline
+            points={actualPts}
+            fill="none"
+            stroke="var(--series-1)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+      </div>
 
-            <div className="metric-pill">
-              <div className="metric-icon-box" style={{ background: "rgba(16, 185, 129, 0.12)", color: "#10b981" }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <rect x="2" y="2" width="20" height="20" rx="5" />
-                  <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-                </svg>
-              </div>
-              <div className="metric-val-wrap">
-                <span className="metric-pct">72%</span>
-                <span className="metric-lbl">RAM USAGE</span>
-              </div>
-            </div>
+      <div className="chart-axis">
+        <span>−{series.length}s</span>
+        <span>now</span>
+      </div>
+    </>
+  );
+}
 
-            <div className="metric-pill">
-              <div className="metric-icon-box" style={{ background: "rgba(245, 158, 11, 0.12)", color: "#f59e0b" }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <circle cx="12" cy="12" r="10" />
-                  <polyline points="12 6 12 12 16 14" />
-                </svg>
-              </div>
-              <div className="metric-val-wrap">
-                <span className="metric-pct">1 Hz</span>
-                <span className="metric-lbl">TELEMETRY</span>
-              </div>
-            </div>
-          </div>
+/* -------------------------------------------------------------------------
+   Dashboard
+   ---------------------------------------------------------------------- */
 
-          {/* Semicircular Curved Speedometer Gauge */}
-          <div className="gauge-hero-container">
-            <svg className="arc-gauge-svg" viewBox="0 0 260 140">
-              <defs>
-                <filter id="gauge-glow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feGaussianBlur stdDeviation="3" result="blur" />
-                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                </filter>
-              </defs>
-              {Array.from({ length: totalSegments }).map((_, i) => {
-                const angle = 180 + (i / (totalSegments - 1)) * 180;
-                const rad = (angle * Math.PI) / 180;
-                const rInner = 82;
-                const rOuter = 104;
-                const cx = 130;
-                const cy = 125;
-                const x1 = cx + rInner * Math.cos(rad);
-                const y1 = cy + rInner * Math.sin(rad);
-                const x2 = cx + rOuter * Math.cos(rad);
-                const y2 = cy + rOuter * Math.sin(rad);
-                const isLit = i < activeSegments;
+const SAMPLE_FLEET: EngineSummary[] = [
+  { id: "uav-01", tail: "UAV-01", model: "Rotax 915 iS", ehi: 94, latestRunId: null, latestRunStatus: "idle" },
+  { id: "uav-02", tail: "UAV-02", model: "Rotax 915 iS", ehi: 84, latestRunId: null, latestRunStatus: "idle" },
+  { id: "uav-03", tail: "UAV-03", model: "Rotax 915 iS", ehi: 94, latestRunId: null, latestRunStatus: "idle" },
+];
 
+export function DashboardOverview({ initialEngines }: Props) {
+  const [engines, setEngines] = useState<EngineSummary[]>(initialEngines);
+  const offline = engines.length === 0;
+  const fleet = offline ? SAMPLE_FLEET : engines;
+
+  // Keep the register fresh without a page reload.
+  useEffect(() => {
+    let cancelled = false;
+    const pull = () =>
+      api
+        .engines()
+        .then((next) => !cancelled && setEngines(next))
+        .catch(() => {
+          /* backend asleep — keep the last good list */
+        });
+    const id = setInterval(pull, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  // The dashboard follows the airframe that most needs attention: the active
+  // sortie with the lowest health, falling back to the lowest-health engine.
+  const focus = useMemo(() => {
+    const active = fleet.filter((e) => e.latestRunStatus === "live" || e.latestRunStatus === "degraded");
+    const pool = active.length > 0 ? active : fleet;
+    return [...pool].sort((a, b) => (a.ehi ?? 101) - (b.ehi ?? 101))[0] ?? null;
+  }, [fleet]);
+
+  const focusRunId =
+    focus && (focus.latestRunStatus === "live" || focus.latestRunStatus === "degraded") ? focus.latestRunId : null;
+
+  const twin = useTwinSocket(focusRunId);
+  const frame = twin.latest;
+
+  /* ---- KPIs ---- */
+  const ready = fleet.filter((e) => (e.ehi ?? 0) >= 70).length;
+  const degraded = fleet.filter((e) => e.ehi !== null && e.ehi >= 50 && e.ehi < 70).length;
+  const grounded = fleet.filter((e) => e.ehi !== null && e.ehi < 50).length;
+  const airborne = fleet.filter((e) => e.latestRunStatus === "live" || e.latestRunStatus === "degraded").length;
+  const lowest = [...fleet].sort((a, b) => (a.ehi ?? 101) - (b.ehi ?? 101))[0] ?? null;
+
+  const alerts = frame?.alerts ?? [];
+  const criticalCount = alerts.filter((a) => a.severity === "critical").length;
+  const cautionCount = alerts.filter((a) => a.severity === "caution").length;
+
+  /* ---- Mission reliability ---- */
+  const mission = frame?.mission ?? null;
+  const rec = RECOMMENDATION_COPY[mission?.recommendation ?? "assessing"] ?? RECOMMENDATION_COPY.assessing;
+  const limiters: ReliabilityLimiter[] = mission?.limiters ?? [];
+  const bindingChannel = limiters[0]?.channel ?? "oil_temp_c";
+
+  /* ---- Diagnosis ---- */
+  const diagnosis = frame?.diagnosis ?? null;
+  const topClasses = useMemo(() => {
+    if (!diagnosis?.probs) return [];
+    return Object.entries(diagnosis.probs)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+  }, [diagnosis]);
+
+  const subsystems = frame?.health?.subsystems ?? null;
+
+  return (
+    <div className="dash">
+      {/* ---------- ROW 1 — KPIs ---------- */}
+      <div className="dash-kpis">
+        <div className="kpi">
+          <span className="eyebrow">MISSION READY</span>
+          <div className="kpi-row">
+            <span className="kpi-value">{ready}</span>
+            <span className="kpi-unit">/ {fleet.length}</span>
+            <span className="kpi-spacer" />
+            <span className="kpi-stack" aria-hidden="true">
+              {fleet.slice(0, 8).map((e) => {
+                const t = tone(e.ehi);
                 return (
-                  <line
-                    key={i}
-                    x1={x1}
-                    y1={y1}
-                    x2={x2}
-                    y2={y2}
-                    stroke={isLit ? "#34d399" : "rgba(255, 255, 255, 0.08)"}
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    filter={isLit ? "url(#gauge-glow)" : undefined}
+                  <i
+                    key={e.id}
                     style={{
-                      transition: "stroke 0.3s ease",
+                      height: t === "ok" ? "100%" : t === "caution" ? "62%" : t === "critical" ? "34%" : "20%",
+                      background:
+                        t === "ok"
+                          ? "var(--ok)"
+                          : t === "caution"
+                            ? "var(--caution)"
+                            : t === "critical"
+                              ? "var(--critical)"
+                              : "var(--ink-4)",
                     }}
                   />
                 );
               })}
-            </svg>
-
-            <div className="gauge-center-stat">
-              <span className="gauge-main-number">{healthScore}%</span>
-              <span className="gauge-sub-caption">fleet health index</span>
-            </div>
-
-            <div className="gauge-min-max-labels">
-              <span>0</span>
-              <span>100</span>
-            </div>
+            </span>
           </div>
-
-          {/* System Status Checklist */}
-          <div className="system-status-grid">
-            <div className="status-check-row">
-              <span className="status-key">Telemetry Engine:</span>
-              <span className="status-val-ok">Active</span>
-            </div>
-            <div className="status-check-row">
-              <span className="status-key">ML Pipeline:</span>
-              <span className="status-val-ok">Connected</span>
-            </div>
-            <div className="status-check-row">
-              <span className="status-key">Nominal Regressors:</span>
-              <span className="status-val-dim">19 Channels</span>
-            </div>
-            <div className="status-check-row">
-              <span className="status-key">Fault Classifier:</span>
-              <span className="status-val-dim">91 States</span>
-            </div>
-            <div className="status-check-row">
-              <span className="status-key">Anomaly Detector:</span>
-              <span className="status-val-ok">Isolation Forest</span>
-            </div>
-            <div className="status-check-row">
-              <span className="status-key">Domain Security:</span>
-              <span className="status-val-ok">Encrypted</span>
-            </div>
-          </div>
+          <span className="kpi-foot">
+            {degraded} degraded · {grounded} grounded
+          </span>
         </div>
 
-        {/* Card 2: AI Threat Forecast */}
-        <div className="dash-card">
-          <div className="card-header-bar">
-            <div className="card-title-cluster">
-              <span style={{ color: "#34d399" }}>✦</span>
-              <span className="card-title">AI Threat & Engine Health Forecast</span>
-            </div>
-            <button
-              type="button"
-              className="card-action-btn"
-              onClick={() => {
-                setTooltipData({
-                  date: "Live Forecast",
-                  actual: Math.floor(38 + Math.random() * 10),
-                  predicted: 35,
-                  deviation: "+14%",
-                  confidence: "High",
-                });
-              }}
-            >
-              <span>↺ Refresh</span>
-            </button>
+        <div className="kpi">
+          <span className="eyebrow">LOWEST EHI</span>
+          <div className="kpi-row">
+            <span className={`kpi-value is-${tone(lowest?.ehi)}`}>
+              {lowest?.ehi === null || lowest?.ehi === undefined ? "—" : Math.round(lowest.ehi)}
+            </span>
+            <span className="kpi-unit">{lowest?.tail ?? ""}</span>
           </div>
+          <span className={`kpi-foot ${tone(lowest?.ehi) === "ok" ? "" : "is-caution"}`}>
+            {lowest?.ehi === null || lowest?.ehi === undefined
+              ? "No health evaluation yet"
+              : `${SUBSYSTEMS.length} subsystems scored`}
+          </span>
+        </div>
 
-          {/* Interactive Chart Area */}
-          <div className="forecast-chart-box">
-            <svg width="100%" height="100%" viewBox="0 0 500 170" preserveAspectRatio="none">
-              <defs>
-                <linearGradient id="blueGlow" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.0" />
-                </linearGradient>
-              </defs>
-
-              {/* Grid lines */}
-              <line x1="30" y1="30" x2="480" y2="30" stroke="rgba(255,255,255,0.05)" strokeDasharray="3 3" />
-              <line x1="30" y1="70" x2="480" y2="70" stroke="rgba(255,255,255,0.05)" strokeDasharray="3 3" />
-              <line x1="30" y1="110" x2="480" y2="110" stroke="rgba(255,255,255,0.05)" strokeDasharray="3 3" />
-              <line x1="30" y1="150" x2="480" y2="150" stroke="rgba(255,255,255,0.08)" />
-
-              {/* Y Axis Labels */}
-              <text x="10" y="34" fill="#475569" fontSize="10">60</text>
-              <text x="10" y="74" fill="#475569" fontSize="10">40</text>
-              <text x="10" y="114" fill="#475569" fontSize="10">20</text>
-              <text x="15" y="154" fill="#475569" fontSize="10">0</text>
-
-              {/* Predicted Green Dotted Line */}
-              <path
-                d="M 40 100 L 100 95 L 160 85 L 220 85 L 280 85 L 340 120 L 400 115 L 460 115"
-                fill="none"
-                stroke="#10b981"
-                strokeWidth="2"
-                strokeDasharray="4 4"
-              />
-
-              {/* Actual Blue Solid Line */}
-              <path
-                d="M 40 120 L 100 85 L 160 55 L 220 55 L 280 65 L 340 65 L 400 65 L 460 145"
-                fill="none"
-                stroke="#38bdf8"
-                strokeWidth="2.5"
-              />
-
-              {/* Active Inspection Point on line */}
-              <circle cx="280" cy="65" r="5" fill="#38bdf8" stroke="#0e1317" strokeWidth="2" />
-              <circle cx="280" cy="85" r="4" fill="#10b981" stroke="#0e1317" strokeWidth="2" />
-              <line x1="280" y1="30" x2="280" y2="150" stroke="rgba(255,255,255,0.15)" strokeDasharray="2 2" />
-
-              {/* X Axis Labels */}
-              <text x="40" y="166" fill="#64748b" fontSize="10">Leg 1</text>
-              <text x="100" y="166" fill="#64748b" fontSize="10">Climb</text>
-              <text x="160" y="166" fill="#64748b" fontSize="10">Cruise</text>
-              <text x="220" y="166" fill="#64748b" fontSize="10">Loiter</text>
-              <text x="280" y="166" fill="#38bdf8" fontSize="10" fontWeight="bold">Current</text>
-              <text x="340" y="166" fill="#64748b" fontSize="10">Descent</text>
-              <text x="400" y="166" fill="#64748b" fontSize="10">Approach</text>
-              <text x="450" y="166" fill="#64748b" fontSize="10">Land</text>
-            </svg>
-
-            {/* Hover Tooltip Box matching image */}
-            {tooltipData && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "20px",
-                  right: "40px",
-                  background: "#162028",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: "8px",
-                  padding: "8px 12px",
-                  fontSize: "11px",
-                  boxShadow: "0 6px 16px rgba(0,0,0,0.4)",
-                  pointerEvents: "none",
-                }}
-              >
-                <div style={{ color: "#94a3b8", fontWeight: 600, marginBottom: 4 }}>
-                  {tooltipData.date}
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 14, color: "#cbd5e1" }}>
-                  <span>Actual Stress:</span>
-                  <strong style={{ color: "#38bdf8" }}>{tooltipData.actual}</strong>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 14, color: "#cbd5e1" }}>
-                  <span>Predicted:</span>
-                  <strong style={{ color: "#34d399" }}>{tooltipData.predicted}</strong>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 14, color: "#cbd5e1" }}>
-                  <span>Deviation:</span>
-                  <strong style={{ color: "#f59e0b" }}>{tooltipData.deviation}</strong>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 14, color: "#cbd5e1" }}>
-                  <span>AI Confidence:</span>
-                  <strong style={{ color: "#10b981" }}>{tooltipData.confidence}</strong>
-                </div>
-              </div>
-            )}
+        <div className="kpi">
+          <span className="eyebrow">SORTIES AIRBORNE</span>
+          <div className="kpi-row">
+            <span className="kpi-value">{airborne}</span>
+            <span className="kpi-spacer" />
+            {mission?.missionRemainingSec ? (
+              <span className="kpi-unit" style={{ fontSize: 11 }}>
+                {fmtDuration(mission.missionRemainingSec)} rem
+              </span>
+            ) : null}
           </div>
+          <span className="kpi-foot">
+            {focusRunId ? `Following ${focus?.tail}` : "No active run — start one from a console"}
+          </span>
+        </div>
 
-          {/* AI Insight Callout matching reference image */}
-          <div className="ai-insight-callout">
-            <span className="insight-sparkle">✦</span>
-            <div className="insight-content">
-              <span className="insight-bold">AI Insight: </span>
-              The nominal digital twin detects elevated temperature deviation in cylinder 3 during high-throttle loiter (+17%).
-              Recommend: <Link href="/uav/uav-01" className="insight-link">Inspect FADEC cylinder 3 injector and cooling baffles</Link>.
-            </div>
+        <div className={`kpi ${criticalCount > 0 ? "is-alert" : ""}`}>
+          <span className="eyebrow">OPEN ALERTS</span>
+          <div className="kpi-row">
+            <span className={`kpi-value ${criticalCount > 0 ? "is-critical" : cautionCount > 0 ? "is-caution" : ""}`}>
+              {alerts.length}
+            </span>
+            <span className="kpi-spacer" />
+            <span style={{ display: "flex", gap: 5 }}>
+              {criticalCount > 0 && <span className="chip is-critical">{criticalCount} CRIT</span>}
+              {cautionCount > 0 && <span className="chip is-caution">{cautionCount} CAUT</span>}
+            </span>
           </div>
+          <span className="kpi-foot">{alerts.length === 0 ? "No unacknowledged alerts" : alerts[0].message}</span>
         </div>
       </div>
 
-      {/* ROW 2: Connected Systems & Sortie Network Activity (Directly matching image) */}
-      <div className="dashboard-row-bottom">
-        {/* Card 3: Connected Systems (Aircraft Fleet) */}
-        <div className="dash-card">
-          <div className="card-header-bar">
-            <div className="card-title-cluster">
-              <span className="card-title">Connected Systems</span>
+      {/* ---------- ROW 2 — reliability + subsystem health ---------- */}
+      <div className="dash-row">
+        <section className="card dash-col-wide">
+          <div className="card-head">
+            <h2 className="card-title">Mission Reliability</h2>
+            {focus && <span className="card-chip">{focus.tail}</span>}
+            <span className="card-meta">{mission?.basis ? mission.basis.toUpperCase() : "AWAITING PROJECTION"}</span>
+          </div>
+
+          <div className="mr-body">
+            <div className="mr-hero">
+              <span className="eyebrow">P(COMPLETE SORTIE)</span>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+                <span className={`mr-p is-${rec.tone}`} style={{ color: `var(--${rec.tone === "idle" ? "ink-3" : rec.tone})` }}>
+                  {mission?.pSuccess !== null && mission?.pSuccess !== undefined ? mission.pSuccess.toFixed(2) : "—"}
+                </span>
+                {mission?.pSuccessLo !== null && mission?.pSuccessHi !== null && mission?.pSuccessLo !== undefined && (
+                  <span className="mr-ci">
+                    {mission.pSuccessLo.toFixed(2)}–{mission.pSuccessHi?.toFixed(2)}
+                  </span>
+                )}
+              </div>
+
+              <div className="mr-band">
+                {mission?.pSuccessLo !== null && mission?.pSuccessLo !== undefined && mission?.pSuccessHi && (
+                  <span
+                    className="mr-band-ci"
+                    style={{
+                      left: `${mission.pSuccessLo * 100}%`,
+                      width: `${Math.max(0, (mission.pSuccessHi - mission.pSuccessLo) * 100)}%`,
+                    }}
+                  />
+                )}
+                <span
+                  className="mr-band-fill"
+                  style={{
+                    width: `${(mission?.pSuccess ?? 0) * 100}%`,
+                    background: `var(--${rec.tone === "idle" ? "ink-4" : rec.tone})`,
+                  }}
+                />
+              </div>
+
+              <div className="mr-scale">
+                <span>0.0</span>
+                <span>confidence: {mission?.confidence ?? "—"}</span>
+                <span>1.0</span>
+              </div>
             </div>
-            <select
-              value={filterView}
-              onChange={(e) => setFilterView(e.target.value)}
-              style={{
-                background: "#1a242c",
-                border: "1px solid rgba(255,255,255,0.08)",
-                color: "#cbd5e1",
-                fontSize: "11.5px",
-                padding: "4px 8px",
-                borderRadius: "6px",
-                outline: "none",
-                cursor: "pointer",
-              }}
-            >
-              <option value="all">View: All aircraft</option>
-              <option value="live">View: Active Sorties</option>
-            </select>
+
+            <span className="vrule" />
+
+            <div className="mr-right">
+              <span className="eyebrow">RECOMMENDATION</span>
+              <div className={`mr-rec is-${rec.tone}`}>
+                <svg
+                  width="17"
+                  height="17"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke={`var(--${rec.tone === "idle" ? "ink-3" : rec.tone})`}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3z" />
+                  <path d="M12 9.5v4M12 17h.01" />
+                </svg>
+                <span className="mr-rec-text">
+                  <span className="mr-rec-title" style={{ color: `var(--${rec.tone === "idle" ? "ink-2" : rec.tone})` }}>
+                    {rec.title}
+                    {mission?.derateTo ? ` to ${Math.round(mission.derateTo)} %` : ""}
+                  </span>
+                  <span className="mr-rec-why">
+                    {mission?.reason ?? "The projection needs about a minute of telemetry before it can measure a trend."}
+                  </span>
+                </span>
+              </div>
+
+              <div className="mr-actions">
+                {focus && (
+                  <Link href={`/uav/${focus.id}`} className="btn-primary">
+                    Open console
+                  </Link>
+                )}
+                <Link href="/fleet" className="btn-secondary">
+                  Fleet register
+                </Link>
+                {focus && (
+                  <Link href={`/uav/${focus.id}/twin3d`} className="btn-secondary">
+                    3D twin
+                  </Link>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="connected-table-wrapper">
-            <table className="connected-table">
-              <thead>
-                <tr>
-                  <th>AIRCRAFT</th>
-                  <th>POWERPLANT</th>
-                  <th>HEALTH SCORE</th>
-                  <th>DIAGNOSIS</th>
-                  <th>ACTIONS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayEngines.map((e) => {
-                  const score = e.ehi !== null && e.ehi !== undefined ? Math.round(e.ehi) : 92;
-                  const isLive = e.latestRunStatus === "live" || e.latestRunStatus === "degraded";
-
-                  return (
-                    <tr key={e.id} className="table-row-system">
-                      <td>
-                        <div className="system-tail-cell">
-                          <span className="tail-icon-badge">✈</span>
-                          <span>{e.tail}</span>
-                        </div>
-                      </td>
-                      <td style={{ color: "#94a3b8", fontSize: "11.5px" }}>
-                        Rotax 915 iS (Turbo)
-                      </td>
-                      <td>
-                        <div className="health-meter-bars">
-                          <div className="meter-segments">
-                            {Array.from({ length: 10 }).map((_, idx) => {
-                              const filled = idx < Math.round(score / 10);
-                              return (
-                                <div
-                                  key={idx}
-                                  className={`meter-segment ${
-                                    filled
-                                      ? score >= 80
-                                        ? "active-green"
-                                        : score >= 50
-                                        ? "active-amber"
-                                        : "active-red"
-                                      : ""
-                                  }`}
-                                />
-                              );
-                            })}
-                          </div>
-                          <span className="meter-pct-num">{score}%</span>
-                        </div>
-                      </td>
-                      <td>
-                        {isLive ? (
-                          <span className="threat-tag threat-low">
-                            ● Active Live
-                          </span>
-                        ) : (
-                          <span className="threat-tag" style={{ background: "rgba(148,163,184,0.15)", color: "#94a3b8" }}>
-                            ○ Standby
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", gap: "6px" }}>
-                          {/* Point 6: Prominent Console Button */}
-                          <Link href={`/uav/${e.id}`} className="btn-table-action" style={{ background: "#0ea5e9", color: "#061016" }}>
-                            Console →
-                          </Link>
-                          {/* 3D Twin link */}
-                          <Link href={`/uav/${e.id}/twin3d`} className="btn-table-action">
-                            3D Twin ◈
-                          </Link>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="card-head" style={{ gap: 8 }}>
+            <span className="eyebrow">LIMITERS · BINDING FIRST</span>
+            <span className="hrule" />
           </div>
 
-          {/* Dedicated Mobile Cards (100% responsive, never overflows screen) */}
-          <div className="connected-mobile-list">
-            {displayEngines.map((e) => {
-              const score = e.ehi !== null && e.ehi !== undefined ? Math.round(e.ehi) : 92;
-              const isLive = e.latestRunStatus === "live" || e.latestRunStatus === "degraded";
-
+          <div className="limiters">
+            {limiters.length === 0 && (
+              <div className="empty-note">
+                No reliability projection yet. Start a sortie from an engine console and the binding limiter appears here.
+              </div>
+            )}
+            {limiters.slice(0, 3).map((l, i) => {
+              const state = i === 0 && l.beyondCaution ? "binding" : l.beyondCaution ? "caution" : "ok";
+              const colour = state === "binding" ? "var(--critical)" : state === "caution" ? "var(--caution)" : "var(--ok)";
               return (
-                <div key={e.id} className="mobile-system-card">
-                  <div className="mobile-card-head">
-                    <div className="system-tail-cell">
-                      <span className="tail-icon-badge">✈</span>
-                      <span style={{ fontSize: "14px", fontWeight: 700 }}>{e.tail}</span>
-                    </div>
-                    {isLive ? (
-                      <span className="threat-tag threat-low">● Active Live</span>
-                    ) : (
-                      <span className="threat-tag" style={{ background: "rgba(148,163,184,0.15)", color: "#94a3b8" }}>
-                        ○ Standby
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="mobile-card-row">
-                    <span style={{ color: "#94a3b8", fontSize: "12px" }}>Powerplant:</span>
-                    <span style={{ fontSize: "12px", color: "#e2e8f0" }}>Rotax 915 iS (Turbo)</span>
-                  </div>
-
-                  <div className="mobile-card-row" style={{ marginTop: "6px" }}>
-                    <span style={{ color: "#94a3b8", fontSize: "12px" }}>Health Score:</span>
-                    <div className="health-meter-bars">
-                      <div className="meter-segments">
-                        {Array.from({ length: 10 }).map((_, idx) => {
-                          const filled = idx < Math.round(score / 10);
-                          return (
-                            <div
-                              key={idx}
-                              className={`meter-segment ${
-                                filled
-                                  ? score >= 80
-                                    ? "active-green"
-                                    : score >= 50
-                                    ? "active-amber"
-                                    : "active-red"
-                                  : ""
-                              }`}
-                            />
-                          );
-                        })}
-                      </div>
-                      <span className="meter-pct-num">{score}%</span>
-                    </div>
-                  </div>
-
-                  <div className="mobile-card-actions">
-                    <Link href={`/uav/${e.id}`} className="btn-table-action" style={{ background: "#0ea5e9", color: "#061016", flex: 1, justifyContent: "center" }}>
-                      Console →
-                    </Link>
-                    <Link href={`/uav/${e.id}/twin3d`} className="btn-table-action" style={{ flex: 1, justifyContent: "center" }}>
-                      3D Twin ◈
-                    </Link>
-                  </div>
+                <div key={l.channel} className={`limiter-row ${state === "binding" ? "is-binding" : ""}`}>
+                  <span className={`lim-chip is-${state}`}>
+                    {state === "binding" ? "BINDING" : state === "caution" ? "CAUTION" : "NOMINAL"}
+                  </span>
+                  <span className="lim-name">{channelLabel(l.channel)}</span>
+                  <span className="lim-val">
+                    {fmt(l.value)} / {fmt(l.limit, 0)} {l.unit}
+                  </span>
+                  <span className="lim-track">
+                    <span
+                      className="lim-fill"
+                      style={{ width: `${Math.max(2, Math.min(100, l.headroomPct))}%`, background: colour }}
+                    />
+                  </span>
+                  <span className="lim-rate">
+                    {l.ratePerMin >= 0 ? "+" : ""}
+                    {fmt(l.ratePerMin, 2)}/min
+                  </span>
+                  <span className="lim-t2l">{fmtDuration(l.secondsToLimit)}</span>
                 </div>
               );
             })}
           </div>
-        </div>
+        </section>
 
-        {/* Card 4: Network / Sortie Activity Map */}
-        <div className="dash-card">
-          <div className="card-header-bar">
-            <div className="card-title-cluster">
-              <span className="card-title">Network Activity</span>
-            </div>
-            <div className="map-time-tabs" style={{ position: "static" }}>
-              {["ALL", "1D", "1W", "1M", "3M"].map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  className={`map-tab-btn ${activeTimeTab === tab ? "active" : ""}`}
-                  onClick={() => setActiveTimeTab(tab)}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
+        <section className="card dash-col-rest">
+          <div className="card-head">
+            <h2 className="card-title">Subsystem health</h2>
+            <span className="card-meta">EHI 0–100</span>
           </div>
 
-          <div className="map-visual-card">
-            {/* Visual radar waypoint circle */}
-            <div className="map-marker-pulse" style={{ top: "45%", left: "68%" }}>
-              <div className="marker-pulse-ring" />
-              <div className="marker-core-icon">✈</div>
+          {subsystems ? (
+            <>
+              <div className="matrix-head">
+                {SUBSYSTEMS.map((s) => (
+                  <span key={s.key}>{s.short}</span>
+                ))}
+              </div>
+              <div className="matrix-body" style={{ minHeight: 44 }}>
+                <div className="matrix-row">
+                  <span className="matrix-tail">{focus?.tail}</span>
+                  {SUBSYSTEMS.map((s) => {
+                    const v = subsystems[s.key];
+                    return (
+                      <span key={s.key} className="matrix-cell" style={cellStyle(v)} title={s.label}>
+                        {v === null ? "—" : Math.round(v)}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="empty-note">
+              Per-subsystem scores arrive once a sortie is live. Fleet health index is shown below.
             </div>
+          )}
 
-            {/* Alert badge over map matching reference image */}
-            <div className="map-alert-tag">
-              <span style={{ fontSize: 13 }}>⚠</span>
-              <span>UAV-01 Telemetry Stream Online</span>
-            </div>
+          <div className="card-head" style={{ gap: 8 }}>
+            <span className="eyebrow">FLEET ENGINE HEALTH INDEX</span>
+            <span className="hrule" />
           </div>
-        </div>
+
+          <div className="matrix-body is-list">
+            {fleet.map((e) => {
+              const t = tone(e.ehi);
+              return (
+                <Link key={e.id} href={`/uav/${e.id}`} className="matrix-row" style={{ textDecoration: "none" }}>
+                  <span className="matrix-tail">{e.tail}</span>
+                  <span className="lim-track" style={{ height: 8, alignSelf: "center" }}>
+                    <span
+                      className="lim-fill"
+                      style={{
+                        width: `${e.ehi ?? 0}%`,
+                        background: t === "unknown" ? "var(--ink-4)" : `var(--${t})`,
+                      }}
+                    />
+                  </span>
+                  <span
+                    className="lim-t2l"
+                    style={{ color: t === "unknown" ? "var(--ink-3)" : `var(--${t})`, fontWeight: 600 }}
+                  >
+                    {e.ehi === null ? "—" : Math.round(e.ehi)}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+
+          <div className="legend">
+            <span className="legend-item">
+              <span className="legend-swatch" style={{ background: "rgba(46,154,208,0.85)" }} /> 90+
+            </span>
+            <span className="legend-item">
+              <span className="legend-swatch" style={{ background: "rgba(46,154,208,0.45)" }} /> 80–89
+            </span>
+            <span className="legend-item">
+              <span className="legend-swatch" style={{ background: "rgba(224,168,46,0.40)" }} /> caution
+            </span>
+            <span className="legend-item">
+              <span className="legend-swatch" style={{ background: "rgba(240,90,110,0.45)" }} /> critical
+            </span>
+          </div>
+        </section>
       </div>
 
-      <AiScanModal isOpen={scanModalOpen} onClose={() => setScanModalOpen(false)} />
+      {/* ---------- ROW 3 — residual, diagnosis, alerts ---------- */}
+      <div className="dash-row dash-row-3">
+        <section className="card">
+          <div className="card-head">
+            <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 0 }}>
+              <h2 className="card-title">Residual — {channelLabel(bindingChannel).toLowerCase()}</h2>
+              <span className="card-sub">Measured against the nominal twin{focus ? `, ${focus.tail}` : ""}</span>
+            </div>
+          </div>
+          <ResidualChart history={twin.history} channel={bindingChannel} />
+        </section>
+
+        <section className="card">
+          <div className="card-head">
+            <h2 className="card-title">Diagnosis</h2>
+            <span className="card-meta">91-STATE CLASSIFIER</span>
+          </div>
+
+          <div className={`diag-top ${!diagnosis ? "is-idle" : diagnosis.label === "healthy" ? "is-ok" : ""}`}>
+            <span className="diag-top-label">TOP CLASS</span>
+            <span className="diag-top-class">
+              {diagnosis ? channelLabel(diagnosis.label) : "Not yet classified"}
+            </span>
+            <span className="diag-top-why">
+              {diagnosis
+                ? `Confidence ${diagnosis.confidence.toFixed(2)}${
+                    diagnosis.cylinder ? ` · cylinder ${diagnosis.cylinder}` : ""
+                  }${diagnosis.sensorFault?.channel ? ` · sensor ${diagnosis.sensorFault.mode} on ${diagnosis.sensorFault.channel}` : ""}`
+                : "The classifier needs residuals from a live run before it can name a state."}
+            </span>
+          </div>
+
+          <div className="diag-bars">
+            {topClasses.length === 0 && <div className="empty-note">No class probabilities yet.</div>}
+            {topClasses.map(([label, p], i) => (
+              <div key={label} className="diag-bar">
+                <div className="diag-bar-head">
+                  <span className="diag-bar-name">{channelLabel(label)}</span>
+                  <span className="diag-bar-p">{p.toFixed(2)}</span>
+                </div>
+                <span className="bar-track">
+                  <span
+                    className="bar-fill"
+                    style={{
+                      width: `${Math.max(1, p * 100)}%`,
+                      background: i === 0 ? "var(--series-1)" : i === 1 ? "var(--series-2)" : "var(--series-3)",
+                    }}
+                  />
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="diag-stats">
+            <div className="stat-mini">
+              <span className="stat-mini-label">ANOMALY</span>
+              <span
+                className={`stat-mini-value ${
+                  diagnosis && diagnosis.anomalyScore > 0.3 ? "is-caution" : diagnosis ? "is-ok" : ""
+                }`}
+              >
+                {diagnosis ? diagnosis.anomalyScore.toFixed(2) : "—"}
+              </span>
+              <span className="stat-mini-foot">Isolation Forest</span>
+            </div>
+            <div className="stat-mini">
+              <span className="stat-mini-label">RUL</span>
+              <span className="stat-mini-value">{fmtDuration(frame?.prognosis?.rulSec)}</span>
+              <span className="stat-mini-foot">
+                {frame?.prognosis?.rulLoSec != null
+                  ? `${fmtDuration(frame.prognosis.rulLoSec)}–${fmtDuration(frame.prognosis.rulHiSec)}`
+                  : "band pending"}
+              </span>
+            </div>
+            <div className="stat-mini">
+              <span className="stat-mini-label">SENSOR</span>
+              <span className={`stat-mini-value ${diagnosis?.sensorFault?.channel ? "is-caution" : "is-ok"}`}>
+                {diagnosis?.sensorFault?.channel ? "FAULT" : "OK"}
+              </span>
+              <span className="stat-mini-foot">
+                {diagnosis?.sensorFault?.channel ? diagnosis.sensorFault.channel : "No drift or bias"}
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card-head">
+            <h2 className="card-title">Alert queue</h2>
+            <Link href="/fleet" className="card-meta" style={{ color: "var(--accent)" }}>
+              All
+            </Link>
+          </div>
+
+          <div className="alert-list">
+            {alerts.length === 0 && (
+              <div className="empty-note">
+                {focusRunId ? "All channels inside their bands." : "No live sortie — nothing to report."}
+              </div>
+            )}
+            {alerts.slice(0, 5).map((a) => (
+              <div key={a.code + a.channel} className={`alert-item ${a.severity === "critical" ? "is-critical" : ""}`}>
+                <div className="alert-head">
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke={a.severity === "critical" ? "var(--critical)" : "var(--caution)"}
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                  >
+                    <path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3z" />
+                    <path d="M12 9.5v4M12 17h.01" />
+                  </svg>
+                  <span
+                    className="alert-code"
+                    style={{ color: a.severity === "critical" ? "var(--critical)" : "var(--caution)" }}
+                  >
+                    {a.severity.toUpperCase()} · {a.code}
+                  </span>
+                </div>
+                <span className="alert-msg">{a.message}</span>
+              </div>
+            ))}
+          </div>
+
+          {offline && (
+            <div className="empty-note" style={{ marginTop: "auto" }}>
+              Backend unreachable — showing a sample fleet so the layout stays readable.
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

@@ -1,64 +1,129 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { EngineSummary } from "@/lib/types";
 import { api } from "@/lib/api";
-import { QuickMetricsStrip } from "@/components/QuickMetricsStrip";
 
 interface Props {
   initialEngines: EngineSummary[];
 }
 
+type Filter = "all" | "airborne" | "degraded" | "grounded";
+
+function tone(v: number | null): "ok" | "caution" | "critical" | "unknown" {
+  if (v === null || v === undefined) return "unknown";
+  if (v < 50) return "critical";
+  if (v < 70) return "caution";
+  return "ok";
+}
+
+function statusOf(e: EngineSummary): { label: string; cls: string } {
+  if (e.latestRunStatus === "live") return { label: "AIRBORNE", cls: "is-ok" };
+  if (e.latestRunStatus === "degraded") return { label: "DEGRADED", cls: "is-critical" };
+  if (tone(e.ehi) === "critical") return { label: "GROUNDED", cls: "is-critical" };
+  if (tone(e.ehi) === "caution") return { label: "CAUTION", cls: "is-caution" };
+  return { label: "READY", cls: "is-accent" };
+}
+
+/** Eight subsystem cells per airframe are only available from a live run; the
+ * register shows the health index it does have, split into eight bands, so the
+ * row reads as a strip without inventing per-subsystem scores. */
+function healthCells(ehi: number | null): string[] {
+  if (ehi === null) return Array(8).fill("var(--surface-3)");
+  const filled = Math.round((ehi / 100) * 8);
+  const colour = ehi < 50 ? "rgba(240,90,110,0.55)" : ehi < 70 ? "rgba(224,168,46,0.48)" : "rgba(46,154,208,0.55)";
+  return Array.from({ length: 8 }, (_, i) => (i < filled ? colour : "var(--surface-3)"));
+}
+
 export function FleetManager({ initialEngines }: Props) {
-  const router = useRouter();
   const [engines, setEngines] = useState<EngineSummary[]>(initialEngines);
+  const [filter, setFilter] = useState<Filter>("all");
+  const [query, setQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [newTail, setNewTail] = useState("");
   const [newModel, setNewModel] = useState("Rotax 915 iS, 4-cyl boxer, turbo, FADEC");
   const [creating, setCreating] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [engineToDelete, setEngineToDelete] = useState<{ id: string; tail: string } | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Poll fleet status every 3s to keep EHI & live sortie tags in sync
+  // Keep EHI and live-sortie tags in sync.
   useEffect(() => {
     let cancelled = false;
-    const fetchEngines = async () => {
+    const pull = async () => {
       try {
         const data = await api.engines();
         if (!cancelled) setEngines(data);
       } catch {
-        // silent background poll fail
+        /* silent background poll fail */
       }
     };
-
-    const interval = setInterval(fetchEngines, 3000);
+    const interval = setInterval(pull, 3000);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
   }, []);
 
-  const getNextTailSuggestion = (currentEngines: EngineSummary[]) => {
-    const nums = currentEngines
+  const counts = useMemo(
+    () => ({
+      all: engines.length,
+      airborne: engines.filter((e) => e.latestRunStatus === "live" || e.latestRunStatus === "degraded").length,
+      degraded: engines.filter((e) => tone(e.ehi) === "caution").length,
+      grounded: engines.filter((e) => tone(e.ehi) === "critical").length,
+    }),
+    [engines]
+  );
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return engines
+      .filter((e) => {
+        if (filter === "airborne") return e.latestRunStatus === "live" || e.latestRunStatus === "degraded";
+        if (filter === "degraded") return tone(e.ehi) === "caution";
+        if (filter === "grounded") return tone(e.ehi) === "critical";
+        return true;
+      })
+      .filter((e) => !q || e.tail.toLowerCase().includes(q) || e.model.toLowerCase().includes(q))
+      .sort((a, b) => (a.ehi ?? 101) - (b.ehi ?? 101));
+  }, [engines, filter, query]);
+
+  const distribution = useMemo(() => {
+    const bands = [
+      { label: "<50", lo: 0, hi: 50 },
+      { label: "50s", lo: 50, hi: 60 },
+      { label: "60s", lo: 60, hi: 70 },
+      { label: "70s", lo: 70, hi: 80 },
+      { label: "80s", lo: 80, hi: 90 },
+      { label: "90+", lo: 90, hi: 101 },
+    ];
+    return bands.map((b) => ({
+      ...b,
+      n: engines.filter((e) => e.ehi !== null && e.ehi >= b.lo && e.ehi < b.hi).length,
+    }));
+  }, [engines]);
+
+  const maxBand = Math.max(1, ...distribution.map((d) => d.n));
+
+  const nextTail = (list: EngineSummary[]) => {
+    const nums = list
       .map((e) => {
         const m = /^UAV-(\d+)$/i.exec(e.tail.trim());
         return m ? parseInt(m[1], 10) : 0;
       })
       .filter((n) => n > 0);
-    const next = nums.length > 0 ? Math.max(...nums) + 1 : currentEngines.length + 1;
+    const next = nums.length > 0 ? Math.max(...nums) + 1 : list.length + 1;
     return `UAV-${next < 10 ? "0" : ""}${next}`;
   };
 
-  const handleOpenAddModal = () => {
-    setNewTail(getNextTailSuggestion(engines));
+  const handleOpenAdd = () => {
+    setNewTail(nextTail(engines));
     setError(null);
     setShowAddModal(true);
   };
 
-  const handleCreateEngine = async (e?: React.FormEvent) => {
+  const handleCreate = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setCreating(true);
     setError(null);
@@ -99,276 +164,253 @@ export function FleetManager({ initialEngines }: Props) {
     } catch (err) {
       setError(`Failed to remove aircraft: ${(err as Error).message}`);
       try {
-        const refreshed = await api.engines();
-        setEngines(refreshed);
+        setEngines(await api.engines());
       } catch {
-        // silent fail
+        /* silent */
       }
     } finally {
       setDeletingId(null);
     }
   };
 
-  const activeSortiesCount = engines.filter(
-    (e) => e.latestRunStatus === "live" || e.latestRunStatus === "degraded"
-  ).length;
-
   return (
-    <div className="fleet-container">
-      <header className="fleet-header">
-        <div className="fleet-header-main">
-          <Link href="/" className="drdo-fleet-logo-link" title="DRDO Fleet Command Overview">
-            <img src="/drdo-logo.png" alt="DRDO Emblem" className="drdo-fleet-logo" />
-          </Link>
-          <div>
-            <h1>UAV FLEET COMMAND</h1>
-            <div className="fleet-stats">
-              <span>{engines.length} Aircraft</span>
-              <span className="stats-dot">•</span>
-              <span className={activeSortiesCount > 0 ? "stats-live" : ""}>
-                {activeSortiesCount} Active Flight{activeSortiesCount === 1 ? "" : "s"}
-              </span>
-              <span className="stats-dot">•</span>
-              <span className="stats-hint">MIL-STD-1553B Telemetry</span>
-            </div>
-          </div>
+    <div className="fleet-page">
+      {/* ---- toolbar ---- */}
+      <div className="fleet-toolbar">
+        <div className="seg">
+          {(["all", "airborne", "degraded", "grounded"] as Filter[]).map((f) => (
+            <button key={f} type="button" className={filter === f ? "active" : ""} onClick={() => setFilter(f)}>
+              {f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)} {counts[f]}
+            </button>
+          ))}
         </div>
 
-        <div className="fleet-header-actions">
-          <button className="btn btn-primary add-engine-btn" onClick={handleOpenAddModal}>
-            + Add Aircraft
-          </button>
+        <div className="filter-input">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <label htmlFor="fleet-q" className="sr-only">
+            Filter airframes
+          </label>
+          <input
+            id="fleet-q"
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter by tail or model"
+          />
         </div>
-      </header>
 
-      {/* High-density real telemetry strip */}
-      <QuickMetricsStrip
-        totalAirframes={engines.length}
-        activeSorties={activeSortiesCount}
-      />
+        <span style={{ flex: 1 }} />
+        <span className="card-meta">SORTED BY EHI, ASCENDING</span>
+        <button type="button" className="btn-primary" onClick={handleOpenAdd}>
+          Add airframe
+        </button>
+      </div>
 
       {error && (
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "10px 18px",
-          background: "rgba(239, 68, 68, 0.15)",
-          border: "1px solid rgba(239, 68, 68, 0.4)",
-          borderRadius: "8px",
-          marginBottom: "20px",
-          color: "#fca5a5",
-          fontSize: "13px"
-        }}>
-          <span>⚠️ {error}</span>
-          <button
-            type="button"
-            onClick={() => setError(null)}
-            style={{ background: "none", border: "none", color: "#fca5a5", cursor: "pointer", fontSize: "16px" }}
-          >
-            ×
-          </button>
+        <div className="alert-item is-critical">
+          <span className="alert-msg">{error}</span>
         </div>
       )}
 
-      {engines.length === 0 ? (
-        <div className="empty-state">
-          <p>No aircraft found in fleet.</p>
-          <button className="btn btn-primary" onClick={handleOpenAddModal}>
-            Add First Aircraft (UAV-01)
-          </button>
+      {/* ---- register ---- */}
+      <div className="register">
+        <div className="register-head">
+          <span className="col-airframe">AIRFRAME</span>
+          <span className="col-status">STATUS</span>
+          <span className="col-health">ENGINE HEALTH</span>
+          <span className="col-subsystems">HEALTH STRIP</span>
+          <span className="col-limiter">MODEL</span>
+          <span className="col-mission">SORTIE</span>
+          <span className="col-hours">RUN</span>
+          <span className="col-action" />
         </div>
-      ) : (
-        <div className="fleet-grid">
-          {engines.map((e) => {
-            const isLive = e.latestRunStatus === "live";
-            const isDegraded = e.latestRunStatus === "degraded";
 
-            return (
-              <div key={e.id} className="fleet-card-wrapper">
-                <div
-                  className="fleet-card"
-                  style={{ cursor: "pointer" }}
-                  onClick={(evt) => {
-                    const target = evt.target as HTMLElement;
-                    if (
-                      target.closest(".btn-card-delete") ||
-                      target.closest(".twin3d-pill") ||
-                      target.closest(".fleet-card-actions")
-                    ) {
-                      return;
-                    }
-                    router.push(`/uav/${e.id}`);
-                  }}
-                >
-                  <div className="fleet-card-top">
-                    <div className="tail-section">
-                      <span className="aircraft-icon">✈</span>
-                      <span className="tail">{e.tail}</span>
-                      <span className="drdo-card-badge">DRDO</span>
-                    </div>
+        {visible.length === 0 && (
+          <div className="empty-note" style={{ padding: 28 }}>
+            {engines.length === 0
+              ? "No airframes registered. The backend may be asleep — add one, or check the API."
+              : "No airframes match this filter."}
+          </div>
+        )}
 
-                    <div className="fleet-card-actions" onClick={(evt) => evt.stopPropagation()}>
-                      <span className={`status status-${e.latestRunStatus ?? "idle"}`}>
-                        {e.latestRunStatus === "live" ? "Live" : e.latestRunStatus ?? "Standby"}
-                      </span>
-                      {engines.length > 1 && (
-                        <button
-                          type="button"
-                          className="btn-card-delete"
-                          title={`Remove ${e.tail}`}
-                          aria-label={`Remove ${e.tail}`}
-                          disabled={deletingId === e.id}
-                          onClick={(evt) => handleInitiateDelete(evt, e.id, e.tail)}
-                        >
-                          {deletingId === e.id ? "…" : "×"}
-                        </button>
-                      )}
-                    </div>
-                  </div>
+        {visible.map((e) => {
+          const st = statusOf(e);
+          const t = tone(e.ehi);
+          const live = e.latestRunStatus === "live" || e.latestRunStatus === "degraded";
+          return (
+            <div key={e.id} className={`register-row ${t === "critical" ? "is-degraded" : ""}`}>
+              <span className="col-airframe">
+                <Link href={`/uav/${e.id}`} className="reg-tail">
+                  {e.tail}
+                </Link>
+                <span className="reg-serial">{e.id}</span>
+              </span>
 
-                  <div className="model">Rotax 915 iS Turbo</div>
+              <span className="col-status">
+                <span className={`chip ${st.cls}`}>
+                  <span className="chip-dot" />
+                  {st.label}
+                </span>
+              </span>
 
-                  <div className="ehi-section">
-                    <div className="ehi-badge">
-                      <span className="ehi-label">Health</span>
-                      <span className="ehi-value">
-                        {e.ehi !== null ? `${Math.round(e.ehi)}%` : "Ready"}
-                      </span>
-                    </div>
-                    <div className="ehi-track-wrapper">
-                      <div 
-                        className="ehi-track-fill" 
-                        style={{ 
-                          width: e.ehi !== null ? `${Math.min(100, Math.max(10, e.ehi))}%` : "100%",
-                          backgroundColor: e.ehi !== null 
-                            ? (e.ehi < 70 ? "var(--critical)" : e.ehi < 85 ? "var(--caution)" : "var(--ok)") 
-                            : "rgba(56, 189, 248, 0.4)"
-                        }} 
-                      />
-                    </div>
-                    {(isLive || isDegraded) && <span className="live-pulse-dot" />}
-                  </div>
+              <span className="col-health">
+                <span className={`reg-ehi is-${t}`}>{e.ehi === null ? "—" : Math.round(e.ehi)}</span>
+                <span className="lim-track">
+                  <span
+                    className="lim-fill"
+                    style={{
+                      width: `${e.ehi ?? 0}%`,
+                      background: t === "unknown" ? "var(--ink-4)" : `var(--${t})`,
+                    }}
+                  />
+                </span>
+              </span>
 
-                  <div className="fleet-card-footer">
-                    <span className="btn-action-console">Console →</span>
-                    <Link
-                      href={`/uav/${e.id}/twin3d`}
-                      className="twin3d-pill"
-                      onClick={(evt) => evt.stopPropagation()}
-                    >
-                      3D Twin ◈
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+              <span className="col-subsystems" aria-hidden="true">
+                {healthCells(e.ehi).map((c, i) => (
+                  <span key={i} className="reg-cell" style={{ background: c }} />
+                ))}
+              </span>
 
-          {/* Quick Add Aircraft Card */}
-          <button
-            type="button"
-            className="fleet-card add-card"
-            onClick={handleOpenAddModal}
-            title="Add aircraft"
-          >
-            <div className="add-icon-circle">+</div>
-            <div className="add-title">Add Aircraft</div>
-            <div className="add-sub">Deploy new digital twin</div>
-          </button>
-        </div>
-      )}
+              <span className="col-limiter">
+                <span className="reg-limiter">{e.model.split(",")[0]}</span>
+                <span className="reg-limiter-detail">{e.model.split(",").slice(1).join(",").trim() || "—"}</span>
+              </span>
 
-      {/* Add Aircraft Modal */}
-      {showAddModal && (
-        <div className="modal-backdrop" onClick={() => setShowAddModal(false)}>
-          <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Deploy Aircraft Twin</h2>
-              <button className="modal-close" onClick={() => setShowAddModal(false)}>
-                ×
-              </button>
-            </div>
+              <span className="col-mission">
+                <span className={`reg-p`} style={{ color: live ? "var(--ok)" : "var(--ink-3)" }}>
+                  {live ? "LIVE" : "IDLE"}
+                </span>
+              </span>
 
-            <form onSubmit={handleCreateEngine}>
-              <p className="modal-description">
-                Add an aircraft instance to monitor with live telemetry and 3D digital twin.
-              </p>
+              <span className="col-hours">
+                <span className="reg-hours">{e.latestRunId ? e.latestRunId.slice(0, 10) : "—"}</span>
+                <span className="reg-hours-of">{e.latestRunStatus ?? "no run"}</span>
+              </span>
 
-              <div className="form-group">
-                <label htmlFor="tail-input">Tail ID / Registration</label>
-                <input
-                  id="tail-input"
-                  type="text"
-                  placeholder="e.g. UAV-02"
-                  value={newTail}
-                  onChange={(e) => setNewTail(e.target.value)}
-                  autoFocus
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="model-input">Engine & Airframe Model</label>
-                <input
-                  id="model-input"
-                  type="text"
-                  placeholder="Engine configuration"
-                  value={newModel}
-                  onChange={(e) => setNewModel(e.target.value)}
-                  required
-                />
-              </div>
-
-              {error && <div className="modal-error">{error}</div>}
-
-              <div className="modal-footer">
+              <span className="col-action">
+                <Link href={`/uav/${e.id}`} className="reg-open">
+                  Console
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m9 5 7 7-7 7" />
+                  </svg>
+                </Link>
                 <button
                   type="button"
-                  className="btn"
-                  onClick={() => setShowAddModal(false)}
-                  disabled={creating}
+                  className="btn-icon"
+                  style={{ width: 30, height: 30, marginLeft: 6 }}
+                  aria-label={`Remove ${e.tail}`}
+                  disabled={deletingId === e.id}
+                  onClick={(ev) => handleInitiateDelete(ev, e.id, e.tail)}
                 >
-                  Cancel
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+                  </svg>
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={creating}>
-                  {creating ? "Deploying…" : "Deploy Aircraft"}
-                </button>
-              </div>
-            </form>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ---- summary ---- */}
+      <div className="fleet-foot">
+        <section className="card">
+          <div className="card-head">
+            <h2 className="card-title">Fleet EHI distribution</h2>
           </div>
+          <div className="dist-chart">
+            {distribution.map((d) => (
+              <span key={d.label} className="dist-col">
+                <span
+                  className="dist-bar"
+                  style={{
+                    height: d.n === 0 ? 3 : `${Math.max(14, (d.n / maxBand) * 100)}%`,
+                    background: d.n === 0 ? "var(--rule-light)" : d.lo < 70 ? "var(--caution)" : "var(--series-1)",
+                  }}
+                />
+                <span className="dist-label">{d.label}</span>
+              </span>
+            ))}
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card-head">
+            <h2 className="card-title">Attention queue</h2>
+            <span className="card-meta">BY HEALTH INDEX</span>
+          </div>
+          <div className="queue-grid">
+            {visible.slice(0, 3).map((e, i) => (
+              <div key={e.id} className={`queue-item ${i === 0 && tone(e.ehi) === "critical" ? "is-due" : ""}`}>
+                <span className="queue-when">{i === 0 ? "LOWEST" : `RANK ${i + 1}`}</span>
+                <span className="queue-what">{e.tail}</span>
+                <span className="queue-why">
+                  {e.ehi === null
+                    ? "No health evaluation yet — run a sortie to score it."
+                    : `Engine health index ${Math.round(e.ehi)}. Open the console for the binding limiter.`}
+                </span>
+              </div>
+            ))}
+            {visible.length === 0 && <div className="empty-note">Nothing in the queue.</div>}
+          </div>
+        </section>
+      </div>
+
+      {/* ---- add modal ---- */}
+      {showAddModal && (
+        <div className="modal-backdrop" onClick={() => setShowAddModal(false)}>
+          <form className="modal-panel" onClick={(e) => e.stopPropagation()} onSubmit={handleCreate}>
+            <h2 className="card-title">Add airframe</h2>
+            <label className="eyebrow" htmlFor="new-tail">
+              TAIL
+            </label>
+            <input
+              id="new-tail"
+              className="modal-input"
+              value={newTail}
+              onChange={(e) => setNewTail(e.target.value)}
+              autoFocus
+            />
+            <label className="eyebrow" htmlFor="new-model">
+              MODEL
+            </label>
+            <input
+              id="new-model"
+              className="modal-input"
+              value={newModel}
+              onChange={(e) => setNewModel(e.target.value)}
+            />
+            {error && <span className="reg-limiter is-critical">{error}</span>}
+            <div className="mr-actions">
+              <button type="submit" className="btn-primary" disabled={creating}>
+                {creating ? "Adding…" : "Add airframe"}
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => setShowAddModal(false)}>
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* ---- delete confirm ---- */}
       {engineToDelete && (
         <div className="modal-backdrop" onClick={() => setEngineToDelete(null)}>
-          <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
-            <div className="modal-header">
-              <h2>Remove {engineToDelete.tail}?</h2>
-              <button className="modal-close" onClick={() => setEngineToDelete(null)}>
-                ×
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+            <h2 className="card-title">Remove {engineToDelete.tail}?</h2>
+            <span className="reg-limiter">
+              This deletes the airframe and its run history from the register. It cannot be undone.
+            </span>
+            <div className="mr-actions">
+              <button type="button" className="btn-danger" onClick={handleConfirmDelete}>
+                Remove airframe
               </button>
-            </div>
-            <p className="modal-description" style={{ marginBottom: 20 }}>
-              Are you sure you want to remove <strong>{engineToDelete.tail}</strong> from the fleet? All associated telemetry and sortie logs will be permanently deleted.
-            </p>
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setEngineToDelete(null)}
-                disabled={Boolean(deletingId)}
-              >
+              <button type="button" className="btn-secondary" onClick={() => setEngineToDelete(null)}>
                 Cancel
-              </button>
-              <button
-                type="button"
-                className="btn btn-danger-action"
-                onClick={handleConfirmDelete}
-                disabled={Boolean(deletingId)}
-              >
-                {deletingId === engineToDelete.id ? "Removing…" : "Remove Aircraft"}
               </button>
             </div>
           </div>

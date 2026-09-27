@@ -12,8 +12,8 @@ interface Props {
 // The hologram viewport is the reason this page exists; the telemetry and ML
 // panels either side are supporting evidence.
 export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }: Props) {
-  const [leftWidth, setLeftWidth] = useState(280);
-  const [rightWidth, setRightWidth] = useState(310);
+  const [leftWidth, setLeftWidth] = useState(248);
+  const [rightWidth, setRightWidth] = useState(272);
   const [bottomHeight, setBottomHeight] = useState(110); // Compact by default to maximize 3D canvas height
 
   const [isMobile, setIsMobile] = useState(false);
@@ -37,10 +37,10 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
       if (!isDraggingRef.current) return;
 
       if (isDraggingRef.current === "left") {
-        const newWidth = Math.max(200, Math.min(500, e.clientX));
+        const newWidth = Math.max(190, Math.min(420, e.clientX - 64));
         setLeftWidth(newWidth);
       } else if (isDraggingRef.current === "right") {
-        const newWidth = Math.max(220, Math.min(550, window.innerWidth - e.clientX));
+        const newWidth = Math.max(200, Math.min(460, window.innerWidth - e.clientX));
         setRightWidth(newWidth);
       } else if (isDraggingRef.current === "bottom") {
         const newHeight = Math.max(60, Math.min(350, window.innerHeight - e.clientY));
@@ -74,9 +74,9 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
   // DEDICATED MOBILE LAYOUT (Not just resized! Stacked view with tab bar below 3D viewport)
   if (isMobile) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: "#080d10", overflowX: "hidden" }}>
+      <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: "var(--paper)", overflowX: "hidden" }}>
         {/* Full-width 3D Canvas Viewport (Tall & Immersive) */}
-        <div style={{ height: "55vh", minHeight: "360px", width: "100%", position: "relative", background: "#060a0d", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        <div style={{ height: "55vh", minHeight: "360px", width: "100%", position: "relative", background: "var(--paper)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
           {centerCanvas}
         </div>
 
@@ -85,7 +85,7 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(3, 1fr)",
-            background: "#0e1317",
+            background: "var(--surface)",
             borderBottom: "1px solid rgba(255,255,255,0.08)",
             position: "sticky",
             top: 0,
@@ -97,16 +97,16 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
             onClick={() => setMobileTab("telemetry")}
             style={{
               padding: "12px 6px",
-              background: mobileTab === "telemetry" ? "rgba(56, 189, 248, 0.12)" : "transparent",
-              color: mobileTab === "telemetry" ? "#38bdf8" : "#94a3b8",
+              background: mobileTab === "telemetry" ? "var(--accent-soft)" : "transparent",
+              color: mobileTab === "telemetry" ? "var(--accent)" : "var(--ink-3)",
               border: "none",
-              borderBottom: mobileTab === "telemetry" ? "2px solid #38bdf8" : "2px solid transparent",
+              borderBottom: mobileTab === "telemetry" ? "2px solid var(--accent)" : "2px solid transparent",
               fontSize: "12px",
               fontWeight: 700,
               cursor: "pointer",
             }}
           >
-            📋 Telemetry
+            Telemetry
           </button>
 
           <button
@@ -114,16 +114,16 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
             onClick={() => setMobileTab("predictor")}
             style={{
               padding: "12px 6px",
-              background: mobileTab === "predictor" ? "rgba(52, 211, 153, 0.12)" : "transparent",
-              color: mobileTab === "predictor" ? "#34d399" : "#94a3b8",
+              background: mobileTab === "predictor" ? "var(--accent-soft)" : "transparent",
+              color: mobileTab === "predictor" ? "var(--accent)" : "var(--ink-3)",
               border: "none",
-              borderBottom: mobileTab === "predictor" ? "2px solid #34d399" : "2px solid transparent",
+              borderBottom: mobileTab === "predictor" ? "2px solid var(--accent)" : "2px solid transparent",
               fontSize: "12px",
               fontWeight: 700,
               cursor: "pointer",
             }}
           >
-            🧠 AI Predictor
+            Diagnostics
           </button>
 
           <button
@@ -131,21 +131,21 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
             onClick={() => setMobileTab("log")}
             style={{
               padding: "12px 6px",
-              background: mobileTab === "log" ? "rgba(245, 158, 11, 0.12)" : "transparent",
-              color: mobileTab === "log" ? "#fbbf24" : "#94a3b8",
+              background: mobileTab === "log" ? "var(--accent-soft)" : "transparent",
+              color: mobileTab === "log" ? "var(--accent)" : "var(--ink-3)",
               border: "none",
-              borderBottom: mobileTab === "log" ? "2px solid #fbbf24" : "2px solid transparent",
+              borderBottom: mobileTab === "log" ? "2px solid var(--accent)" : "2px solid transparent",
               fontSize: "12px",
               fontWeight: 700,
               cursor: "pointer",
             }}
           >
-            💻 Logs
+            Logs
           </button>
         </div>
 
         {/* Selected Mobile Content Panel */}
-        <div style={{ flex: 1, padding: "16px", background: "#0e1317", minHeight: "300px", paddingBottom: "70px" }}>
+        <div style={{ flex: 1, padding: "16px", background: "var(--surface)", minHeight: "300px", paddingBottom: "70px" }}>
           {mobileTab === "telemetry" && leftPanel}
           {mobileTab === "predictor" && rightPanel}
           {mobileTab === "log" && bottomLog}
@@ -164,7 +164,7 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
           display: "flex",
           flex: 1,
           overflow: "hidden",
-          background: "#080d10",
+          background: "var(--paper)",
           position: "relative",
         }}
       >
@@ -174,7 +174,7 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
           style={{ width: `${leftWidth}px`, flexShrink: 0, overflow: "hidden" }}
         >
           <div className="panel-tab-header">
-            <span className="tab-active">RADAR SENSOR BUS // MIL-STD-1553</span>
+            <span className="tab-active">TELEMETRY</span>
           </div>
           <div className="panel-content">{leftPanel}</div>
         </aside>
@@ -182,7 +182,7 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
         {/* Resizable Divider 1 (Left <-> Center) */}
         <div
           onMouseDown={() => startDragging("left")}
-          onDoubleClick={() => setLeftWidth(280)}
+          onDoubleClick={() => setLeftWidth(248)}
           title="Drag to resize panel (Double-click to reset)"
           style={{
             width: "6px",
@@ -204,7 +204,6 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
         >
           <div className="panel-tab-header">
             <span className="tab-active">3D DIGITAL TWIN</span>
-            <span className="tab-sub">ROTAX 915 iS AERO ENGINE</span>
           </div>
           <div className="canvas-wrapper-container" style={{ width: "100%", height: "calc(100% - 32px)", position: "relative" }}>
             {centerCanvas}
@@ -214,7 +213,7 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
         {/* Resizable Divider 2 (Center <-> Right) */}
         <div
           onMouseDown={() => startDragging("right")}
-          onDoubleClick={() => setRightWidth(310)}
+          onDoubleClick={() => setRightWidth(272)}
           title="Drag to resize panel (Double-click to reset)"
           style={{
             width: "6px",
@@ -235,7 +234,7 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
           style={{ width: `${rightWidth}px`, flexShrink: 0, overflow: "hidden" }}
         >
           <div className="panel-tab-header">
-            <span className="tab-active">AI SURVIVABILITY & COMBAT DIAGNOSTICS</span>
+            <span className="tab-active">DIAGNOSTICS</span>
           </div>
           <div className="panel-content">{rightPanel}</div>
         </aside>

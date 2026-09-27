@@ -57,6 +57,8 @@ export class EngineModel {
   private matFactory: HologramMaterialFactory;
   private onLoadedCallbacks: Array<() => void> = [];
   private lastFrame: TickFrame | null = null;
+  private mountStruts: THREE.Mesh[] = [];
+  private strutMaterial: THREE.MeshStandardMaterial | null = null;
 
   constructor(onLoad?: () => void) {
     this.group = new THREE.Group();
@@ -119,6 +121,9 @@ export class EngineModel {
     // Source materials are replaced wholesale; release their GPU handles.
     disposable.forEach((m) => m.dispose());
 
+    // Bridge the accessories the asset ships unattached (see addMountStruts).
+    this.addMountStruts(scene);
+
     // Centre and normalise scale
     const bbox = new THREE.Box3().setFromObject(scene);
     const center = new THREE.Vector3();
@@ -141,6 +146,77 @@ export class EngineModel {
     pivot.rotation.y = -Math.PI / 4;
 
     this.group.add(pivot);
+  }
+
+  /**
+   * Four accessories ship detached from the block: the fuse box (gap 0.039),
+   * the overboost wastegate (0.057), the magneto valve (0.122) and the oil tank
+   * (0.037) — 4% to 11% of the model's span, which is why they read as parts
+   * floating in space rather than as an engine.
+   *
+   * Those standoffs are real: on a 915 iS installation each of these mounts off
+   * the block on a bracket, with hoses or a loom running back to it. What the
+   * asset omits is the bracket, so this draws it — a strut from each detached
+   * group to the nearest face of the block. It adds the missing mount; it does
+   * not move any component, so every part stays where the CAD puts it.
+   */
+  private addMountStruts(scene: THREE.Group) {
+    scene.updateMatrixWorld(true);
+
+    const groups = new Map<string, THREE.Box3>();
+    scene.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const key = child.parent?.name || child.name || "?";
+      const box = new THREE.Box3().setFromObject(child);
+      if (box.isEmpty()) return;
+      const existing = groups.get(key);
+      if (existing) existing.union(box);
+      else groups.set(key, box);
+    });
+
+    if (groups.size < 2) return;
+
+    const volume = (b: THREE.Box3) => {
+      const s = b.getSize(new THREE.Vector3());
+      return s.x * s.y * s.z;
+    };
+    const sorted = [...groups.entries()].sort((a, b) => volume(b[1]) - volume(a[1]));
+    const [, block] = sorted[0];
+
+    const span = block.getSize(new THREE.Vector3()).length();
+    const radius = span * 0.006;
+
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x55646f,
+      metalness: 0.85,
+      roughness: 0.45,
+    });
+    this.strutMaterial = material;
+
+    for (const [name, box] of sorted.slice(1)) {
+      if (box.intersectsBox(block)) continue;
+
+      const from = box.getCenter(new THREE.Vector3());
+      const to = block.clampPoint(from, new THREE.Vector3());
+      const length = from.distanceTo(to);
+      if (length <= 1e-4) continue;
+
+      const strut = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 10), material);
+      strut.name = `mount_strut_${name}`;
+      strut.position.copy(from).lerp(to, 0.5);
+      strut.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        to.clone().sub(from).normalize()
+      );
+
+      scene.add(strut);
+      this.mountStruts.push(strut);
+    }
+  }
+
+  /** Hide the drawn mounts, for anyone who wants the CAD exactly as shipped. */
+  public setMountsVisible(visible: boolean) {
+    this.mountStruts.forEach((m) => (m.visible = visible));
   }
 
   /**
@@ -289,6 +365,10 @@ export class EngineModel {
 
   public setRenderMode(mode: RenderMode) {
     this.matFactory.setRenderMode(mode);
+    if (this.strutMaterial) {
+      this.strutMaterial.wireframe = mode === "wireframe";
+      this.strutMaterial.color.setHex(mode === "wireframe" ? 0xc9d6de : 0x55646f);
+    }
   }
 
   public updateFromFrame(frame: TickFrame | null) {

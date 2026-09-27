@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import { AiScanModal } from "./AiScanModal";
@@ -9,83 +9,85 @@ interface Props {
   onOpenGuide?: () => void;
 }
 
+function pageMeta(pathname: string): { title: string; sub: string } {
+  if (pathname === "/") {
+    return { title: "Fleet Command", sub: "ROTAX 915 iS · MALE UAV FLEET · SECTOR 4" };
+  }
+  if (pathname === "/fleet") {
+    return { title: "Fleet Register", sub: "AIRFRAME STATUS · BINDING LIMITERS · MAINTENANCE QUEUE" };
+  }
+  if (pathname.includes("/twin3d")) {
+    return { title: "3D Digital Twin", sub: "ROTAX 915 iS · FAULT OVERLAY" };
+  }
+  if (pathname.startsWith("/uav/")) {
+    return { title: "Engine Console", sub: "LIVE TELEMETRY · RESIDUALS · MISSION RELIABILITY" };
+  }
+  if (pathname.startsWith("/twin2")) {
+    return { title: "Telemetry Stream", sub: "PHYSICS TWIN · RAW CHANNELS" };
+  }
+  return { title: "Operations", sub: "RETRIBUTION AERO TWIN" };
+}
+
 export function TopBar({ onOpenGuide }: Props) {
   const pathname = usePathname();
   const [scanModalOpen, setScanModalOpen] = useState(false);
+  const [clock, setClock] = useState<string | null>(null);
 
-  const getBreadcrumb = () => {
-    if (pathname === "/") return "Dashboard Overview";
-    if (pathname === "/fleet") return "Fleet Manager";
-    if (pathname.includes("/twin3d")) return "3D Holographic Twin";
-    if (pathname.startsWith("/uav/")) return "Aircraft Telemetry Console";
-    return "Operations Center";
-  };
+  // Rendered only after mount: a server-rendered clock guarantees a hydration
+  // mismatch, since the two instants are never the same.
+  useEffect(() => {
+    const tick = () => setClock(`${new Date().toISOString().slice(11, 19)}Z`);
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const { title, sub } = pageMeta(pathname);
 
   return (
     <>
       <header className="app-topbar">
-        <div className="topbar-left">
-          {/* DRDO Emblem Logo */}
-          <div className="topbar-drdo-badge" title="Defence Research and Development Organisation (DRDO)">
-            <img src="/drdo-logo.png" alt="DRDO" className="drdo-topbar-logo" />
-            <div className="drdo-badge-text">
-              <span className="drdo-org-name">DRDO</span>
-              <span className="drdo-sub-title">RETRIBUTION</span>
-            </div>
-          </div>
-
-          <div className="page-breadcrumb">
-            <svg className="breadcrumb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-            <span>{getBreadcrumb()}</span>
-          </div>
-
-          <div className="search-command-bar">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <input type="text" placeholder="Search aircraft, telemetry, faults..." readOnly />
-            <span className="search-kbd-shortcut">⌘K</span>
-          </div>
+        <div className="topbar-titles">
+          <h1 className="topbar-title">{title}</h1>
+          <span className="topbar-sub">{sub}</span>
         </div>
 
-        <div className="topbar-actions">
-          <button
-            type="button"
-            className="btn-run-ai"
-            onClick={() => setScanModalOpen(true)}
-            title="Run instant ML anomaly and fault scan across all channels"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z" />
-            </svg>
-            <span>Run AI Scan</span>
-          </button>
+        <div className="topbar-search">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <input type="text" placeholder="Search tail, channel, fault code" readOnly />
+          <span className="topbar-kbd">⌘K</span>
+        </div>
 
-        <button
-          type="button"
-          className="btn-top-icon"
-          title="Operator Guide & Walkthrough"
-          onClick={onOpenGuide}
-        >
-          <span style={{ fontSize: 14 }}>💡</span>
+        <div className="topbar-clock">
+          <span className="status-dot" />
+          <span>{clock ?? "--:--:--Z"}</span>
+        </div>
+
+        <button type="button" className="btn-icon" onClick={onOpenGuide} aria-label="Operator guide">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M9.6 9.4a2.5 2.5 0 1 1 3.3 2.4c-.6.2-.9.8-.9 1.4v.4M12 17h.01" />
+          </svg>
         </button>
 
-        <button
-          type="button"
-          className="btn-top-icon"
-          title="Alert Notifications"
-          onClick={() => alert("All engine channels running nominal. No unresolved critical alarms.")}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+        <button type="button" className="btn-icon" aria-label="Alerts">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 8.5a6 6 0 1 0-12 0c0 6-2.5 7.5-2.5 7.5h17S18 14.5 18 8.5" />
+            <path d="M13.7 20a2 2 0 0 1-3.4 0" />
           </svg>
           <span className="notif-dot" />
         </button>
-      </div>
+
+        <button type="button" className="btn-primary" onClick={() => setScanModalOpen(true)}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3v4M12 17v4M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M17.7 6.3l1.4-1.4M4.9 19.1l1.4-1.4" />
+            <circle cx="12" cy="12" r="3.2" />
+          </svg>
+          <span>Run scan</span>
+        </button>
       </header>
       <AiScanModal isOpen={scanModalOpen} onClose={() => setScanModalOpen(false)} />
     </>

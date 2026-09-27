@@ -15,7 +15,7 @@ async function getEngines(): Promise<EngineSummary[]> {
 export default async function FleetPage() {
   const engines = await getEngines();
   return (
-    <main className="fleet" style={{ padding: "28px 24px" }}>
+    <main>
       <FleetManager initialEngines={engines} />
     </main>
   );

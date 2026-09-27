@@ -77,7 +77,7 @@ export function MLPredictionPanel({ frame }: Props) {
   return (
     <div className="panel-inner ml-panel-scroll">
       <div className="panel-header-badge">
-        <span className="badge-title">PHYSICS TWIN (M1–M6)</span>
+        <span className="badge-title">Physics twin</span>
         <span className={`badge-status ${isHealthy ? "status-ok" : "status-fault"}`}>
           {isLive ? (isHealthy ? "Nominal (Live)" : "Fault Detected") : "Pre-Flight Standby"}
         </span>
@@ -146,7 +146,7 @@ export function MLPredictionPanel({ frame }: Props) {
         <div className="section-title">Prognosis & Reliability</div>
         <div className="prognosis-box">
           <div className="prog-metric-row">
-            <span className="prog-k">TIME TO REDLINE AT THIS POWER</span>
+            <span className="prog-k">TIME TO REDLINE</span>
             <span className="prog-v highlight-text">{isLive ? fmtSec(prognosis.rulSec) : "> 1000 hrs"}</span>
           </div>
           <div className="prog-metric-row">

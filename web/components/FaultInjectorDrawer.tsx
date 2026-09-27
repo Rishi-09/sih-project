@@ -68,7 +68,7 @@ export function FaultInjectorDrawer({
         zIndex: 9000,
         display: "flex",
         flexDirection: "column",
-        color: "#e2e8f0",
+        color: "var(--ink)",
       }}
     >
       {/* Header */}
@@ -83,7 +83,7 @@ export function FaultInjectorDrawer({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 18, color: "#f59e0b" }}>⚡</span>
+          <span style={{ fontSize: 18, color: "var(--caution)" }}>⚡</span>
           <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: "0.02em" }}>FAULT INJECTION SUITE</span>
         </div>
         <button
@@ -91,7 +91,7 @@ export function FaultInjectorDrawer({
           style={{
             background: "none",
             border: "none",
-            color: "#94a3b8",
+            color: "var(--ink-2)",
             fontSize: 20,
             cursor: "pointer",
             padding: "2px 6px",
@@ -104,11 +104,11 @@ export function FaultInjectorDrawer({
       <div style={{ padding: "20px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 20 }}>
         {/* Active Faults Summary */}
         <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", marginBottom: 8 }}>
             Currently Injected Faults
           </div>
           {injectedFaults.length === 0 ? (
-            <div style={{ fontSize: 12, color: "#34d399", background: "rgba(16,185,129,0.1)", padding: "8px 12px", borderRadius: 6, border: "1px solid rgba(16,185,129,0.2)" }}>
+            <div style={{ fontSize: 12, color: "var(--ok)", background: "rgba(16,185,129,0.1)", padding: "8px 12px", borderRadius: 6, border: "1px solid rgba(16,185,129,0.2)" }}>
               ✓ Engine running nominal — No faults active
             </div>
           ) : (
@@ -154,7 +154,7 @@ export function FaultInjectorDrawer({
 
         {/* Fault Selector */}
         <div>
-          <label style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
             Select Fault Mode
           </label>
           <select
@@ -177,7 +177,7 @@ export function FaultInjectorDrawer({
               </option>
             ))}
           </select>
-          <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 6, lineHeight: 1.4 }}>
+          <div style={{ fontSize: 11.5, color: "var(--ink-2)", marginTop: 6, lineHeight: 1.4 }}>
             {FAULT_OPTIONS.find((o) => o.id === selectedFault)?.desc}
           </div>
         </div>
@@ -185,10 +185,10 @@ export function FaultInjectorDrawer({
         {/* Severity Slider */}
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase" }}>
               Severity Level
             </span>
-            <span style={{ fontSize: 13, fontWeight: 800, color: severity >= 0.8 ? "#ef4444" : severity >= 0.5 ? "#f59e0b" : "#10b981" }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: severity >= 0.8 ? "var(--critical)" : severity >= 0.5 ? "var(--caution)" : "var(--ok)" }}>
               {Math.round(severity * 100)}%
             </span>
           </div>
@@ -199,7 +199,7 @@ export function FaultInjectorDrawer({
             step="0.1"
             value={severity}
             onChange={(e) => setSeverity(parseFloat(e.target.value))}
-            style={{ width: "100%", accentColor: "#f59e0b" }}
+            style={{ width: "100%", accentColor: "var(--caution)" }}
           />
         </div>
 

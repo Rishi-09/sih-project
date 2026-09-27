@@ -215,7 +215,7 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
               alignItems: "center",
               gap: 14,
               fontSize: "12px",
-              color: "#34d399",
+              color: "var(--ok)",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -228,7 +228,7 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
               <span>2. Initializing Rotax 915 Physics Simulator</span>
             </div>
             <span>→</span>
-            <div style={{ color: "#64748b" }}>
+            <div style={{ color: "var(--ink-3)" }}>
               <span>3. 1 Hz Stream</span>
             </div>
           </div>

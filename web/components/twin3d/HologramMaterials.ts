@@ -10,29 +10,35 @@ export function getHealthGrade(score: number): HealthGrade {
   return "critical";
 }
 
+// Console palette, not a neon one: the engine reads as machined metal and
+// colour is spent on state, not decoration.
 export const HOLO_COLORS = {
-  excellent: 0x38bdf8, // Cyberpunk Cyan
-  nominal: 0x22c55e,   // Emerald Green
-  caution: 0xeab308,   // Warning Amber
-  critical: 0xef4444,  // Critical Crimson
-  grid: 0x1e293b,      // Grid cyan
-  wireframe: 0x64748b, // Wireframe cyan
+  excellent: 0x5bc8f5,
+  nominal: 0x2fbf88,
+  caution: 0xe0a82e,
+  critical: 0xf05a6e,
+  grid: 0x1a232d,
+  wireframe: 0x5d6e7c,
 };
 
-// Subsystem accent colors, used to tint neutral metal and to key the rim glow.
+// Subsystem hints only bias the slate ramp; they are deliberately desaturated
+// so the model does not read as a teal hologram.
 const SUBSYSTEM_HINTS: Record<string, number> = {
-  combustion: 0x54c6d1,
-  mechanical: 0x3aa7ba,
-  lubrication: 0x3ebda8,
-  cooling: 0x4aa0d8,
-  induction_fuel: 0x54c6d1,
-  electrical: 0x6ed4df,
+  combustion: 0x6d8494,
+  mechanical: 0x5f7787,
+  lubrication: 0x62808c,
+  cooling: 0x64839a,
+  induction_fuel: 0x6d8494,
+  electrical: 0x76909f,
 };
 
 // The darkest the source model goes is near-black (0.004 linear); lifting it to a
 // slate floor is what keeps 700k triangles of engine from reading as a silhouette.
-const SLATE_DARK = new THREE.Color(0x1b2b35);
-const SLATE_LIGHT = new THREE.Color(0x7d94a0);
+// The floor is deliberately well clear of the viewport background: the turbo hangs
+// off the block on a thin bracket arm, and when that arm shaded to near-black it
+// vanished, leaving the turbo looking like a detached part floating in space.
+const SLATE_DARK = new THREE.Color(0x2c3d49);
+const SLATE_LIGHT = new THREE.Color(0x8ea3ae);
 
 /**
  * Surface response inferred from the source material name. `tone` is a floor on
@@ -46,11 +52,11 @@ function surfaceProps(srcName: string): { metalness: number; roughness: number; 
   if (n.includes("bearing")) return { metalness: 1.0, roughness: 0.18, tone: 0.62 };
   if (n.includes("shinier") || n.includes("bolt")) return { metalness: 0.95, roughness: 0.25, tone: 0.55 };
   if (n.includes("metal")) return { metalness: 0.9, roughness: 0.38, tone: 0.44 };
-  if (n.includes("hose") || n.includes("hoes") || n.includes("sheath")) return { metalness: 0.0, roughness: 0.85, tone: 0.08 };
-  if (n.includes("soft")) return { metalness: 0.0, roughness: 0.8, tone: 0.11 };
-  if (n.includes("plastic") || n.includes("baffle")) return { metalness: 0.05, roughness: 0.65, tone: 0.14 };
+  if (n.includes("hose") || n.includes("hoes") || n.includes("sheath")) return { metalness: 0.0, roughness: 0.85, tone: 0.22 };
+  if (n.includes("soft")) return { metalness: 0.0, roughness: 0.8, tone: 0.24 };
+  if (n.includes("plastic") || n.includes("baffle")) return { metalness: 0.05, roughness: 0.65, tone: 0.26 };
   if (n.includes("enamel")) return { metalness: 0.35, roughness: 0.35, tone: 0.5 };
-  if (n.includes("paint")) return { metalness: 0.55, roughness: 0.5, tone: 0.2 };
+  if (n.includes("paint")) return { metalness: 0.55, roughness: 0.5, tone: 0.3 };
   return { metalness: 0.7, roughness: 0.45, tone: 0.35 };
 }
 
@@ -107,28 +113,31 @@ export class HologramMaterialFactory {
     this.materials.forEach((mat) => {
       if (mode === "wireframe") {
         mat.wireframe = true;
-        if (mat.userData.baseColor) mat.color.copy(mat.userData.baseColor);
-        mat.emissive.setHex(0x38bdf8);
-        mat.emissiveIntensity = 0.45;
+        // Wireframe lines are one pixel wide on a near-black viewport, so they
+        // get a bright silver of their own rather than the model's slate, which
+        // was dark enough to disappear.
+        mat.color.setHex(0xd7e2ea);
+        mat.emissive.setHex(0x9fb2bf);
+        mat.emissiveIntensity = 0.55;
       } else if (mode === "flir_thermal") {
         mat.wireframe = false;
         const sub = mat.userData.subsystem;
         if (sub === "combustion") {
-          mat.color.setHex(0xf87171);
-          mat.emissive.setHex(0xef4444);
-          mat.emissiveIntensity = 0.55;
+          mat.color.setHex(0xf05a6e);
+          mat.emissive.setHex(0xa33344);
+          mat.emissiveIntensity = 0.30;
         } else if (sub === "cooling") {
-          mat.color.setHex(0x38bdf8);
-          mat.emissive.setHex(0x0284c7);
-          mat.emissiveIntensity = 0.4;
+          mat.color.setHex(0x5bc8f5);
+          mat.emissive.setHex(0x235a72);
+          mat.emissiveIntensity = 0.24;
         } else if (sub === "lubrication") {
-          mat.color.setHex(0xfbbf24);
-          mat.emissive.setHex(0xd97706);
-          mat.emissiveIntensity = 0.45;
+          mat.color.setHex(0xe0a82e);
+          mat.emissive.setHex(0x8a641a);
+          mat.emissiveIntensity = 0.26;
         } else {
-          mat.color.setHex(0x22c55e);
-          mat.emissive.setHex(0x15803d);
-          mat.emissiveIntensity = 0.25;
+          mat.color.setHex(0x2fbf88);
+          mat.emissive.setHex(0x17624a);
+          mat.emissiveIntensity = 0.16;
         }
       } else {
         // Tactical Solid CAD: Restore clean authentic uniform blueprint/metal color with cyan accents
@@ -137,7 +146,7 @@ export class HologramMaterialFactory {
         mat.emissive.copy(mat.userData.baseEmissive);
         mat.emissiveIntensity = 0.04;
         mat.userData.rimColor.value.copy(mat.userData.baseEmissive);
-        mat.userData.rimStrength.value = 0.4;
+        mat.userData.rimStrength.value = 0.22;
       }
     });
   }

@@ -6,7 +6,8 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
-  width: 100vw;
+  width: 100%;
+  min-width: 0;
   overflow: hidden;
   background: var(--paper);
   color: var(--ink);
@@ -50,8 +51,8 @@
   font-family: var(--font-tactical);
   font-weight: 700;
   font-size: 16px;
-  letter-spacing: 0.05em;
-  color: var(--accent);
+  letter-spacing: 0.02em;
+  color: var(--ink);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -130,7 +131,7 @@
 .ide-panel-right .panel-tab-header { justify-content: space-between; flex-direction: row-reverse; }
 
 .ide-panel-center {
-  background: #0f1410;
+  background: var(--surface);
   border-right: 1px solid var(--rule);
 }
 
@@ -349,8 +350,8 @@
 }
 
 .sensor-list-row.z-norm { border-left-color: var(--accent); }
-.sensor-list-row.z-warn { border-left-color: var(--caution); background: #261c12; }
-.sensor-list-row.z-crit { border-left-color: var(--critical); background: #2c1412; }
+.sensor-list-row.z-warn { border-left-color: var(--caution); background: rgba(224, 168, 46, 0.10); }
+.sensor-list-row.z-crit { border-left-color: var(--critical); background: rgba(240, 90, 110, 0.10); }
 
 .sensor-ch-name {
   flex: 1.2;
@@ -582,7 +583,7 @@
 .rec-land_immediately { background: var(--critical-soft); color: var(--critical); }
 
 .ehi-banner {
-  background: #16202c;
+  background: var(--surface-3);
   border: 1px solid rgba(56, 189, 248, 0.25);
   border-radius: 5px;
   padding: 10px;
@@ -621,12 +622,12 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #111822;
+  background: var(--surface);
 }
 
 .log-toolbar {
   height: 28px;
-  background: #16202c;
+  background: var(--surface-3);
   border-bottom: 1px solid var(--rule);
   display: flex;
   align-items: center;
@@ -816,7 +817,7 @@
   background: var(--caution-soft);
   border-color: var(--caution);
   color: var(--caution);
-  box-shadow: 0 0 10px rgba(251, 191, 36, 0.25);
+  box-shadow: none;
 }
 .faultbar-caret { font-size: 9px; opacity: 0.7; transition: transform 0.25s ease; }
 
@@ -833,3 +834,70 @@
 .subsystem-card.sub-unknown { border-left-color: var(--rule); }
 .subsystem-card.sub-unknown .sub-score { color: var(--ink-3); }
 .ehi-banner-val.ehi-unknown { color: var(--ink-3); }
+
+/* ---- viewport thermal legend ------------------------------------------ */
+
+.thermal-legend {
+  position: absolute;
+  bottom: 42px;
+  left: 14px;
+  z-index: 20;
+  min-width: 236px;
+  padding: 9px 11px;
+  border-radius: var(--r-sm, 8px);
+  background: rgba(10, 14, 18, 0.9);
+  border: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.thermal-legend-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--ink-3);
+}
+
+.thermal-legend-ramp {
+  height: 7px;
+  border-radius: 3px;
+  background: linear-gradient(to right, #1b3a6b, #2e9ad0, #2fbf88, #e0a82e, #d2683c, #f05a6e);
+}
+
+.thermal-legend-axis {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--ink-4);
+}
+
+/* Fault count badge on the inject button. */
+.fault-count {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: var(--critical-soft);
+  color: var(--critical);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.topbar-engine-model {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+/* No sortie is not the same as nominal: it gets a neutral pill, not a green one. */
+.status-pill-idle {
+  background: var(--surface-3);
+  border: 1px solid var(--rule-light);
+  color: var(--ink-2);
+}

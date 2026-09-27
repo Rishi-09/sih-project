@@ -38,12 +38,12 @@ export function SortieModalPopup({
         style={{
           background: "#10171d",
           border: "1px solid rgba(84, 198, 209, 0.3)",
-          borderRadius: "16px",
+          borderRadius: "14px",
           maxWidth: "480px",
           width: "100%",
           padding: "28px",
           boxShadow: "0 24px 48px rgba(0, 0, 0, 0.7)",
-          color: "#e2e8f0",
+          color: "var(--ink)",
           textAlign: "center",
         }}
       >
@@ -52,24 +52,27 @@ export function SortieModalPopup({
             width: "52px",
             height: "52px",
             borderRadius: "50%",
-            background: "rgba(245, 158, 11, 0.15)",
-            border: "1px solid rgba(245, 158, 11, 0.4)",
+            background: "var(--caution-soft)",
+            border: "1px solid rgba(224, 168, 46, 0.35)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             fontSize: "24px",
             margin: "0 auto 16px",
-            color: "#f59e0b",
+            color: "var(--caution)",
           }}
         >
-          ⚡
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7.6v5M12 16.2h.01" />
+          </svg>
         </div>
 
-        <div style={{ fontSize: "19px", fontWeight: 800, color: "#ffffff", marginBottom: "8px" }}>
-          Aircraft Is Not Started Yet
+        <div style={{ fontSize: "19px", fontWeight: 800, color: "var(--ink)", marginBottom: "8px" }}>
+          No active sortie
         </div>
 
-        <div style={{ fontSize: "13px", color: "#94a3b8", lineHeight: 1.5, marginBottom: "24px" }}>
+        <div style={{ fontSize: "13px", color: "var(--ink-2)", lineHeight: 1.5, marginBottom: "24px" }}>
           <strong>{engineTail}</strong> does not have an active sortie running. Live 1 Hz sensor telemetry, AI fault diagnosis, and thermal heatmaps require a live flight stream.
         </div>
 
@@ -78,9 +81,9 @@ export function SortieModalPopup({
             type="button"
             onClick={onStartSortie}
             style={{
-              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-              color: "#ffffff",
-              border: "1px solid rgba(52, 211, 153, 0.4)",
+              background: "var(--accent)",
+              color: "var(--on-accent)",
+              border: "none",
               padding: "12px 18px",
               borderRadius: "8px",
               fontWeight: 700,
@@ -90,10 +93,9 @@ export function SortieModalPopup({
               alignItems: "center",
               justifyContent: "center",
               gap: "8px",
-              boxShadow: "0 4px 14px rgba(16, 185, 129, 0.35)",
-            }}
+                          }}
           >
-            <span>▶ Start Nominal Sortie (S1)</span>
+            <span>Start nominal sortie (S1)</span>
           </button>
 
           <button
@@ -101,7 +103,7 @@ export function SortieModalPopup({
             onClick={onDismiss}
             style={{
               background: "#1b252d",
-              color: "#38bdf8",
+              color: "var(--accent)",
               border: "1px solid rgba(56, 189, 248, 0.3)",
               padding: "11px 18px",
               borderRadius: "8px",
@@ -114,14 +116,14 @@ export function SortieModalPopup({
               gap: "6px",
             }}
           >
-            <span>👁 Inspect 3D CAD Only (View Mode)</span>
+            <span>Inspect the engine twin only</span>
           </button>
 
           <Link
             href={`/uav/${engineId}`}
             style={{
               background: "transparent",
-              color: "#64748b",
+              color: "var(--ink-3)",
               padding: "8px 12px",
               borderRadius: "6px",
               fontWeight: 500,
