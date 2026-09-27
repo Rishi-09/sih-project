@@ -940,3 +940,103 @@
   justify-content: center;
   flex-shrink: 0;
 }
+
+/* ==========================================================================
+   Dedicated Mobile Layout Architecture (< 768px and < 1024px)
+   ========================================================================== */
+
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* Hide desktop sidebar on mobile */
+  .app-sidebar {
+    display: none !important;
+  }
+
+  .app-topbar {
+    padding: 0 14px;
+    height: 52px;
+  }
+
+  .search-command-bar {
+    display: none; /* Hide desktop command bar to save space on small phones */
+  }
+
+  .app-page-body {
+    padding-bottom: 74px !important; /* Ensure content never overlaps with bottom nav */
+  }
+
+  /* Fixed Mobile Bottom Bar */
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: rgba(14, 19, 23, 0.95);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    z-index: 999;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 8px;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+  }
+
+  .mobile-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 600;
+    text-decoration: none;
+    flex: 1;
+    padding: 6px 0;
+    transition: all 0.15s ease;
+  }
+
+  .mobile-nav-item.active {
+    color: #38bdf8;
+  }
+
+  .dashboard-grid-container {
+    padding: 12px;
+    gap: 14px;
+  }
+
+  .dashboard-row-top,
+  .dashboard-row-bottom {
+    grid-template-columns: 1fr !important;
+    gap: 14px;
+  }
+
+  .health-mini-metrics {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .system-status-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .fleet-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .console-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .grid-evidence {
+    grid-template-columns: 1fr !important;
+  }
+}

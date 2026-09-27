@@ -12,11 +12,25 @@ interface Props {
 export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }: Props) {
   const [leftWidth, setLeftWidth] = useState(280);
   const [rightWidth, setRightWidth] = useState(310);
-  const [bottomHeight, setBottomHeight] = useState(160);
+  const [bottomHeight, setBottomHeight] = useState(110); // Compact by default to maximize 3D canvas height
+
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileTab, setMobileTab] = useState<"telemetry" | "predictor" | "log">("telemetry");
 
   const isDraggingRef = useRef<"left" | "right" | "bottom" | null>(null);
 
   useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile) return;
+
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDraggingRef.current) return;
 
@@ -27,7 +41,7 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
         const newWidth = Math.max(220, Math.min(550, window.innerWidth - e.clientX));
         setRightWidth(newWidth);
       } else if (isDraggingRef.current === "bottom") {
-        const newHeight = Math.max(80, Math.min(400, window.innerHeight - e.clientY));
+        const newHeight = Math.max(60, Math.min(350, window.innerHeight - e.clientY));
         setBottomHeight(newHeight);
       }
     };
@@ -47,7 +61,7 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, []);
+  }, [isMobile]);
 
   const startDragging = (type: "left" | "right" | "bottom") => {
     isDraggingRef.current = type;
@@ -55,6 +69,90 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
     document.body.style.userSelect = "none";
   };
 
+  // DEDICATED MOBILE LAYOUT (Not just resized! Stacked view with tab bar below 3D viewport)
+  if (isMobile) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: "#080d10", overflowX: "hidden" }}>
+        {/* Full-width 3D Canvas Viewport (Tall & Immersive) */}
+        <div style={{ height: "55vh", minHeight: "360px", width: "100%", position: "relative", background: "#060a0d", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          {centerCanvas}
+        </div>
+
+        {/* Dedicated Mobile Panel Tabs */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            background: "#0e1317",
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
+            position: "sticky",
+            top: 0,
+            zIndex: 40,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setMobileTab("telemetry")}
+            style={{
+              padding: "12px 6px",
+              background: mobileTab === "telemetry" ? "rgba(56, 189, 248, 0.12)" : "transparent",
+              color: mobileTab === "telemetry" ? "#38bdf8" : "#94a3b8",
+              border: "none",
+              borderBottom: mobileTab === "telemetry" ? "2px solid #38bdf8" : "2px solid transparent",
+              fontSize: "12px",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            📋 Telemetry
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMobileTab("predictor")}
+            style={{
+              padding: "12px 6px",
+              background: mobileTab === "predictor" ? "rgba(52, 211, 153, 0.12)" : "transparent",
+              color: mobileTab === "predictor" ? "#34d399" : "#94a3b8",
+              border: "none",
+              borderBottom: mobileTab === "predictor" ? "2px solid #34d399" : "2px solid transparent",
+              fontSize: "12px",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            🧠 AI Predictor
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMobileTab("log")}
+            style={{
+              padding: "12px 6px",
+              background: mobileTab === "log" ? "rgba(245, 158, 11, 0.12)" : "transparent",
+              color: mobileTab === "log" ? "#fbbf24" : "#94a3b8",
+              border: "none",
+              borderBottom: mobileTab === "log" ? "2px solid #fbbf24" : "2px solid transparent",
+              fontSize: "12px",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            💻 Logs
+          </button>
+        </div>
+
+        {/* Selected Mobile Content Panel */}
+        <div style={{ flex: 1, padding: "16px", background: "#0e1317", minHeight: "300px", paddingBottom: "70px" }}>
+          {mobileTab === "telemetry" && leftPanel}
+          {mobileTab === "predictor" && rightPanel}
+          {mobileTab === "log" && bottomLog}
+        </div>
+      </div>
+    );
+  }
+
+  // DESKTOP LAYOUT (3-Column Resizable Layout with Maximum Vertical Height)
   return (
     <div className="twin3d-ide-container" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {/* Upper 3 Columns */}
@@ -97,10 +195,10 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
           className="resize-handle-col"
         />
 
-        {/* Center 3D Hologram Viewport */}
+        {/* Center 3D Hologram Viewport (Increased Vertical Height) */}
         <main
           className="ide-panel ide-panel-center"
-          style={{ flex: 1, minWidth: "300px", overflow: "hidden", position: "relative" }}
+          style={{ flex: 1, minWidth: "300px", overflow: "hidden", position: "relative", height: "100%" }}
         >
           <div className="panel-tab-header">
             <span className="tab-active">3D DIGITAL TWIN</span>
@@ -144,7 +242,7 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
       {/* Horizontal Divider (Workspace <-> Bottom Log) */}
       <div
         onMouseDown={() => startDragging("bottom")}
-        onDoubleClick={() => setBottomHeight(160)}
+        onDoubleClick={() => setBottomHeight(110)}
         title="Drag to resize console (Double-click to reset)"
         style={{
           height: "6px",
@@ -156,7 +254,7 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
         className="resize-handle-row"
       />
 
-      {/* Bottom Integrated Terminal / Log Panel */}
+      {/* Bottom Integrated Terminal / Log Panel (Compact by default) */}
       <footer
         className="ide-panel ide-panel-bottom"
         style={{ height: `${bottomHeight}px`, flexShrink: 0, overflow: "hidden" }}

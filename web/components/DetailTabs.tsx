@@ -21,15 +21,18 @@ import { AiPanel } from "./AiPanel";
  * selected on arrival when one is already open.
  */
 
-type Tab = "alerts" | "telemetry" | "diagnosis" | "advisory";
+import { StatisticalTelemetryMetrics } from "./StatisticalTelemetryMetrics";
+
+type Tab = "alerts" | "telemetry" | "diagnosis" | "advisory" | "graphs";
 
 export function DetailTabs({ frame, runId }: { frame: TickFrame; runId: string }) {
   const alertCount = frame.alerts.length;
-  const [tab, setTab] = useState<Tab>(alertCount > 0 ? "alerts" : "telemetry");
+  const [tab, setTab] = useState<Tab>(alertCount > 0 ? "alerts" : "graphs");
 
   const tabs: { id: Tab; label: string; badge?: number }[] = [
+    { id: "graphs", label: "📈 Graphs & Stats" },
     { id: "alerts", label: "Alerts", badge: alertCount || undefined },
-    { id: "telemetry", label: "Telemetry" },
+    { id: "telemetry", label: "Telemetry Grid" },
     { id: "diagnosis", label: "Diagnosis" },
     { id: "advisory", label: "Advisory" },
   ];
@@ -52,6 +55,7 @@ export function DetailTabs({ frame, runId }: { frame: TickFrame; runId: string }
       </div>
 
       <div className="tabpanel" role="tabpanel">
+        {tab === "graphs" && <StatisticalTelemetryMetrics frame={frame} />}
         {tab === "alerts" && <AlertsPanel alerts={frame.alerts} />}
         {tab === "telemetry" && <SensorGrid frame={frame} />}
         {tab === "diagnosis" && <DiagnosisPanel frame={frame} />}

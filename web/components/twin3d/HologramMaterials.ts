@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
 export type HealthGrade = "excellent" | "nominal" | "caution" | "critical";
-export type ViewMode = "hologram" | "solid" | "thermal";
+export type RenderMode = "tactical" | "wireframe" | "flir_thermal";
 
 export function getHealthGrade(score: number): HealthGrade {
   if (score >= 90) return "excellent";
@@ -11,15 +11,15 @@ export function getHealthGrade(score: number): HealthGrade {
 }
 
 export const HOLO_COLORS = {
-  excellent: 0x54c6d1, // Cyberpunk Cyan
-  nominal: 0x4cbc80,   // Emerald Green
-  caution: 0xe2a44a,   // Warning Amber
-  critical: 0xe76f62,  // Critical Crimson
-  grid: 0x183442,      // Grid cyan
-  wireframe: 0x8be9fd, // Wireframe cyan
+  excellent: 0x38bdf8, // Cyberpunk Cyan
+  nominal: 0x22c55e,   // Emerald Green
+  caution: 0xeab308,   // Warning Amber
+  critical: 0xef4444,  // Critical Crimson
+  grid: 0x1e293b,      // Grid cyan
+  wireframe: 0x64748b, // Wireframe cyan
 };
 
-// Subsystem accent colors for Hologram mode
+// Subsystem accent colors, used to tint neutral metal and to key the rim glow.
 const SUBSYSTEM_HINTS: Record<string, number> = {
   combustion: 0x54c6d1,
   mechanical: 0x3aa7ba,
@@ -29,117 +29,59 @@ const SUBSYSTEM_HINTS: Record<string, number> = {
   electrical: 0x6ed4df,
 };
 
-// Thermal mapping colors (Blue -> Cyan -> Green -> Yellow -> Orange -> Red)
-export function getThermalColor(tempC: number): THREE.Color {
-  // Range: 20°C (ambient cold) to 950°C (max EGT)
-  const norm = THREE.MathUtils.clamp((tempC - 20) / (950 - 20), 0, 1);
-  const color = new THREE.Color();
+// The darkest the source model goes is near-black (0.004 linear); lifting it to a
+// slate floor is what keeps 700k triangles of engine from reading as a silhouette.
+const SLATE_DARK = new THREE.Color(0x1b2b35);
+const SLATE_LIGHT = new THREE.Color(0x7d94a0);
 
-  if (norm < 0.2) {
-    // 20°C - 200°C: Dark Blue to Cyan
-    color.setRGB(0.05, 0.2 + norm * 3.5, 0.6 + norm * 2.0);
-  } else if (norm < 0.4) {
-    // 200°C - 390°C: Cyan to Emerald Green
-    const t = (norm - 0.2) / 0.2;
-    color.setRGB(0.1 * (1 - t), 0.9, 0.8 * (1 - t) + 0.1);
-  } else if (norm < 0.65) {
-    // 390°C - 620°C: Green to Yellow
-    const t = (norm - 0.4) / 0.25;
-    color.setRGB(0.2 + 0.8 * t, 0.9, 0.1);
-  } else if (norm < 0.85) {
-    // 620°C - 810°C: Yellow to Bright Orange
-    const t = (norm - 0.65) / 0.2;
-    color.setRGB(1.0, 0.9 - 0.5 * t, 0.05);
-  } else {
-    // 810°C - 950°C: Orange to Hot Incandescent Red/White
-    const t = (norm - 0.85) / 0.15;
-    color.setRGB(1.0, 0.4 * (1 - t) + 0.3 * t, 0.2 * t);
-  }
-  return color;
+/**
+ * Surface response inferred from the source material name. `tone` is a floor on
+ * the slate ramp: 34 of the model's 36 materials ship the same near-black base
+ * colour, so source luminance alone cannot tell a braided hose from an exhaust
+ * header — the material name is the only signal there is.
+ */
+function surfaceProps(srcName: string): { metalness: number; roughness: number; tone: number } {
+  const n = srcName.toLowerCase();
+  if (n.includes("exhaust")) return { metalness: 0.95, roughness: 0.42, tone: 0.46 };
+  if (n.includes("bearing")) return { metalness: 1.0, roughness: 0.18, tone: 0.62 };
+  if (n.includes("shinier") || n.includes("bolt")) return { metalness: 0.95, roughness: 0.25, tone: 0.55 };
+  if (n.includes("metal")) return { metalness: 0.9, roughness: 0.38, tone: 0.44 };
+  if (n.includes("hose") || n.includes("hoes") || n.includes("sheath")) return { metalness: 0.0, roughness: 0.85, tone: 0.08 };
+  if (n.includes("soft")) return { metalness: 0.0, roughness: 0.8, tone: 0.11 };
+  if (n.includes("plastic") || n.includes("baffle")) return { metalness: 0.05, roughness: 0.65, tone: 0.14 };
+  if (n.includes("enamel")) return { metalness: 0.35, roughness: 0.35, tone: 0.5 };
+  if (n.includes("paint")) return { metalness: 0.55, roughness: 0.5, tone: 0.2 };
+  return { metalness: 0.7, roughness: 0.45, tone: 0.35 };
 }
 
-// Authentic Solid CAD physical engine materials (fixes Point 5 component separation feel)
-function getSolidCADProps(srcName: string): {
-  color: THREE.Color;
-  metalness: number;
-  roughness: number;
-} {
-  const n = srcName.toLowerCase();
+/**
+ * Grade a source colour into the holographic palette. Saturated colours (the
+ * ROTAX blue covers, yellow markers) keep their hue so the engine stays
+ * recognisable; neutrals ride a slate ramp tinted toward the subsystem accent.
+ */
+function gradeColor(src: THREE.Color, accent: THREE.Color, tone: number): THREE.Color {
+  const hsl = { h: 0, s: 0, l: 0 };
+  src.getHSL(hsl);
 
-  // Rotax 915 iS Signature Blue cylinder head covers
-  if (n.includes("enamel") || n.includes("blue") || n.includes("cover")) {
-    return {
-      color: new THREE.Color(0x0f52ba), // Rotax Signature Sapphire Blue
-      metalness: 0.3,
-      roughness: 0.35,
-    };
-  }
-  // Exhaust manifold & turbo headers (heat-treated steel)
-  if (n.includes("exhaust")) {
-    return {
-      color: new THREE.Color(0x5c504a), // Bronzed stainless steel
-      metalness: 0.85,
-      roughness: 0.35,
-    };
-  }
-  // Bearings & polished shafts
-  if (n.includes("bearing") || n.includes("shinier")) {
-    return {
-      color: new THREE.Color(0xd0d5dd), // Polished chrome steel
-      metalness: 0.95,
-      roughness: 0.15,
-    };
-  }
-  // Engine Block & Crankcase (cast aluminum alloy)
-  if (n.includes("metal") || n.includes("case") || n.includes("block")) {
-    return {
-      color: new THREE.Color(0x78848f), // Matte cast aluminum
-      metalness: 0.75,
-      roughness: 0.45,
-    };
-  }
-  // Coolant & Intake Hoses (durable black vulcanized rubber)
-  if (n.includes("hose") || n.includes("hoes") || n.includes("sheath") || n.includes("soft")) {
-    return {
-      color: new THREE.Color(0x1a1d20), // Dark rubber
-      metalness: 0.05,
-      roughness: 0.85,
-    };
-  }
-  // Plastic baffles & air intake ducting
-  if (n.includes("plastic") || n.includes("baffle")) {
-    return {
-      color: new THREE.Color(0x282c30), // Reinforced composite
-      metalness: 0.1,
-      roughness: 0.6,
-    };
-  }
-  // Fasteners & bolts (galvanized zinc / brass)
-  if (n.includes("bolt") || n.includes("clamp")) {
-    return {
-      color: new THREE.Color(0xb0a890), // Zinc/gold coated steel
-      metalness: 0.9,
-      roughness: 0.25,
-    };
+  if (hsl.s > 0.25) {
+    // Keep identity colours — the blue ROTAX covers and yellow markers are how
+    // the engine stays recognisable as a 915 iS.
+    const out = new THREE.Color();
+    out.setHSL(hsl.h, Math.min(1, hsl.s * 1.05), THREE.MathUtils.clamp(hsl.l * 1.15 + 0.08, 0.12, 0.72));
+    return out;
   }
 
-  // Default mechanical components
-  return {
-    color: new THREE.Color(0x6b7782),
-    metalness: 0.7,
-    roughness: 0.4,
-  };
+  // Neutral: ride the slate ramp, floored by the material class.
+  const t = Math.max(Math.pow(THREE.MathUtils.clamp(hsl.l, 0, 1), 0.45), tone);
+  const out = SLATE_DARK.clone().lerp(SLATE_LIGHT, t);
+  return out.lerp(accent, 0.12);
 }
 
 export interface HoloMaterial extends THREE.MeshStandardMaterial {
   userData: {
     subsystem: string;
-    srcName: string;
+    baseColor: THREE.Color;
     baseEmissive: THREE.Color;
-    solidColor: THREE.Color;
-    solidMetalness: number;
-    solidRoughness: number;
-    holoColor: THREE.Color;
     rimColor: { value: THREE.Color };
     rimStrength: { value: number };
   };
@@ -147,8 +89,8 @@ export interface HoloMaterial extends THREE.MeshStandardMaterial {
 
 export class HologramMaterialFactory {
   private static instance: HologramMaterialFactory;
+
   private materials: Map<string, HoloMaterial> = new Map();
-  public currentMode: ViewMode = "solid"; // Default to Solid CAD as requested
 
   public static getInstance(): HologramMaterialFactory {
     if (!HologramMaterialFactory.instance) {
@@ -157,41 +99,63 @@ export class HologramMaterialFactory {
     return HologramMaterialFactory.instance;
   }
 
-  public all(): HoloMaterial[] {
-    return Array.from(this.materials.values());
-  }
+  /** Every material built so far, so per-frame state can be applied in one pass. */
+  private currentRenderMode: RenderMode = "tactical";
 
-  public setViewMode(mode: ViewMode) {
-    this.currentMode = mode;
+  public setRenderMode(mode: RenderMode) {
+    this.currentRenderMode = mode;
     this.materials.forEach((mat) => {
-      this.applyModeToMaterial(mat);
+      if (mode === "wireframe") {
+        mat.wireframe = true;
+        if (mat.userData.baseColor) mat.color.copy(mat.userData.baseColor);
+        mat.emissive.setHex(0x38bdf8);
+        mat.emissiveIntensity = 0.45;
+      } else if (mode === "flir_thermal") {
+        mat.wireframe = false;
+        const sub = mat.userData.subsystem;
+        if (sub === "combustion") {
+          mat.color.setHex(0xf87171);
+          mat.emissive.setHex(0xef4444);
+          mat.emissiveIntensity = 0.55;
+        } else if (sub === "cooling") {
+          mat.color.setHex(0x38bdf8);
+          mat.emissive.setHex(0x0284c7);
+          mat.emissiveIntensity = 0.4;
+        } else if (sub === "lubrication") {
+          mat.color.setHex(0xfbbf24);
+          mat.emissive.setHex(0xd97706);
+          mat.emissiveIntensity = 0.45;
+        } else {
+          mat.color.setHex(0x22c55e);
+          mat.emissive.setHex(0x15803d);
+          mat.emissiveIntensity = 0.25;
+        }
+      } else {
+        // Tactical Solid CAD: Restore clean authentic uniform blueprint/metal color with cyan accents
+        mat.wireframe = false;
+        if (mat.userData.baseColor) mat.color.copy(mat.userData.baseColor);
+        mat.emissive.copy(mat.userData.baseEmissive);
+        mat.emissiveIntensity = 0.04;
+        mat.userData.rimColor.value.copy(mat.userData.baseEmissive);
+        mat.userData.rimStrength.value = 0.4;
+      }
     });
   }
 
-  private applyModeToMaterial(mat: HoloMaterial) {
-    if (this.currentMode === "solid") {
-      // Solid CAD Mode: Authentic mechanical assembly without gaps
-      mat.color.copy(mat.userData.solidColor);
-      mat.metalness = mat.userData.solidMetalness;
-      mat.roughness = mat.userData.solidRoughness;
-      mat.userData.rimStrength.value = 0.08; // Very subtle edge contour, no harsh glowing gaps
-      mat.emissiveIntensity = 0.0;
-      mat.wireframe = false;
-    } else if (this.currentMode === "thermal") {
-      // Thermal FLIR Mode: Sensor temperature colors
-      mat.metalness = 0.1;
-      mat.roughness = 0.7;
-      mat.userData.rimStrength.value = 0.0;
-      mat.wireframe = false;
-    } else {
-      // Hologram Mode: Cybernetic twin
-      mat.color.copy(mat.userData.holoColor);
-      mat.metalness = 0.6;
-      mat.roughness = 0.4;
-      mat.userData.rimStrength.value = 0.45;
-      mat.wireframe = false;
-    }
-    mat.needsUpdate = true;
+  public getRenderMode(): RenderMode {
+    return this.currentRenderMode;
+  }
+
+  public setGlobalOpacity(opacity: number) {
+    const clamped = THREE.MathUtils.clamp(opacity, 0.0, 1.0);
+    this.materials.forEach((mat) => {
+      mat.opacity = clamped;
+      mat.depthWrite = clamped > 0.4;
+    });
+  }
+
+  public all(): HoloMaterial[] {
+    return Array.from(this.materials.values());
   }
 
   public dispose() {
@@ -199,6 +163,11 @@ export class HologramMaterialFactory {
     this.materials.clear();
   }
 
+  /**
+   * Build (or reuse) the holographic counterpart of a source glTF material.
+   * Cached per source-material + subsystem, so the whole engine is ~40 materials
+   * sharing one shader program rather than one material per mesh.
+   */
   public fromSource(src: THREE.MeshStandardMaterial, subsystem: string): HoloMaterial {
     const srcName = src.name || "generic";
     const key = `${srcName}::${subsystem}`;
@@ -207,37 +176,39 @@ export class HologramMaterialFactory {
     if (cached) return cached;
 
     const accent = new THREE.Color(SUBSYSTEM_HINTS[subsystem] ?? HOLO_COLORS.excellent);
-    const solidProps = getSolidCADProps(srcName);
+    const { metalness, roughness, tone } = surfaceProps(srcName);
+    const finalColor = gradeColor(src.color, accent, tone);
 
     const mat = new THREE.MeshStandardMaterial({
-      color: solidProps.color.clone(),
-      metalness: solidProps.metalness,
-      roughness: solidProps.roughness,
+      color: finalColor,
+      metalness,
+      roughness,
       emissive: accent.clone(),
       emissiveIntensity: 0.0,
       side: THREE.FrontSide,
       transparent: false,
+      depthWrite: true,
+      opacity: 1.0,
     }) as HoloMaterial;
 
     mat.name = key;
     mat.userData = {
       subsystem,
-      srcName,
+      baseColor: finalColor.clone(),
       baseEmissive: accent.clone(),
-      solidColor: solidProps.color.clone(),
-      solidMetalness: solidProps.metalness,
-      solidRoughness: solidProps.roughness,
-      holoColor: accent.clone().multiplyScalar(0.7),
       rimColor: { value: accent.clone() },
-      rimStrength: { value: 0.1 },
+      rimStrength: { value: 0.4 },
     };
 
     this.applyRim(mat);
-    this.applyModeToMaterial(mat);
     this.materials.set(key, mat);
     return mat;
   }
 
+  /**
+   * Fresnel rim glow injected into the standard shader. This is what carries the
+   * hologram read: edges light up, interior surfaces stay legible as metal.
+   */
   private applyRim(mat: HoloMaterial) {
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uRimColor = mat.userData.rimColor;
@@ -258,86 +229,52 @@ export class HologramMaterialFactory {
         );
     };
 
-    mat.customProgramCacheKey = () => "engine-multi-mode-v2";
+    // Constant key: all holo materials share one compiled program.
+    mat.customProgramCacheKey = () => "holo-rim-v1";
   }
 
-  public setState(
-    mat: HoloMaterial,
-    healthScore: number,
-    isFaulted: boolean,
-    pulse: number,
-    tempC?: number
-  ) {
+  /**
+   * Drive a material's health/fault state. Called for every material each frame,
+   * including healthy ones, so a cleared fault always resets.
+   */
+  public setState(mat: HoloMaterial, healthScore: number, isFaulted: boolean, pulse: number) {
+    // If we're currently in thermal mode, let thermal colors dominate unless faulted
+    if (this.currentRenderMode === "flir_thermal" && !isFaulted) {
+      return;
+    }
+
     const grade = getHealthGrade(healthScore);
 
-    // In Thermal Mode, color is driven by actual thermal telemetry!
-    if (this.currentMode === "thermal") {
-      let partTemp = tempC;
-      if (partTemp === undefined) {
-        // Realistic nominal temperatures per subsystem if live sensor not yet wired
-        if (mat.userData.subsystem === "combustion") partTemp = 820; // Exhaust & combustion
-        else if (mat.userData.subsystem === "cooling") partTemp = 92;  // Coolant
-        else if (mat.userData.subsystem === "lubrication") partTemp = 105; // Oil
-        else partTemp = 65; // Ambient / mechanical
-      }
-
-      if (isFaulted) partTemp += 120; // Fault thermal surge
-
-      const thermalColor = getThermalColor(partTemp);
-      mat.color.copy(thermalColor);
-      mat.emissive.copy(thermalColor);
-      mat.emissiveIntensity = 0.45 + pulse * 0.3;
-      return;
-    }
-
-    // In Solid CAD Mode
-    if (this.currentMode === "solid") {
-      if (isFaulted) {
-        mat.emissive.setHex(HOLO_COLORS.critical);
-        mat.emissiveIntensity = 0.5 + pulse * 0.4;
-        mat.userData.rimColor.value.setHex(HOLO_COLORS.critical);
-        mat.userData.rimStrength.value = 0.8 + pulse * 0.5;
-        return;
-      }
-
-      if (grade === "critical" || grade === "caution") {
-        const warn = grade === "critical" ? HOLO_COLORS.critical : HOLO_COLORS.caution;
-        mat.emissive.setHex(warn);
-        mat.emissiveIntensity = grade === "critical" ? 0.3 : 0.15;
-        mat.userData.rimColor.value.setHex(warn);
-        mat.userData.rimStrength.value = 0.5;
-        return;
-      }
-
-      // Normal solid mechanical appearance
-      mat.color.copy(mat.userData.solidColor);
-      mat.emissiveIntensity = 0.0;
-      mat.userData.rimStrength.value = 0.08;
-      return;
-    }
-
-    // In Hologram Mode
     if (isFaulted) {
       mat.emissive.setHex(HOLO_COLORS.critical);
-      mat.emissiveIntensity = 0.4 + pulse * 0.5;
+      mat.emissiveIntensity = 0.35 + pulse * 0.55;
       mat.userData.rimColor.value.setHex(HOLO_COLORS.critical);
-      mat.userData.rimStrength.value = 1.0 + pulse * 0.8;
+      mat.userData.rimStrength.value = 1.1 + pulse * 0.9;
       return;
     }
 
     if (grade === "critical" || grade === "caution") {
       const warn = grade === "critical" ? HOLO_COLORS.critical : HOLO_COLORS.caution;
       mat.emissive.setHex(warn);
-      mat.emissiveIntensity = grade === "critical" ? 0.25 : 0.15;
+      mat.emissiveIntensity = grade === "critical" ? 0.22 : 0.12;
       mat.userData.rimColor.value.setHex(warn);
-      mat.userData.rimStrength.value = 0.8;
+      mat.userData.rimStrength.value = 0.85;
       return;
     }
 
-    mat.color.copy(mat.userData.holoColor);
     mat.emissive.copy(mat.userData.baseEmissive);
-    mat.emissiveIntensity = 0.06;
+    mat.emissiveIntensity = 0.04;
     mat.userData.rimColor.value.copy(mat.userData.baseEmissive);
-    mat.userData.rimStrength.value = 0.45;
+    mat.userData.rimStrength.value = 0.4;
+  }
+
+  /** Legacy entry point: flat-colour material with no source to grade from. */
+  public getMaterial(subsystem: string, healthScore: number = 100, isFaulted: boolean = false): HoloMaterial {
+    const proxy = new THREE.MeshStandardMaterial({ color: 0x2b3b45 });
+    proxy.name = `legacy_${getHealthGrade(healthScore)}`;
+    const mat = this.fromSource(proxy, subsystem);
+    proxy.dispose();
+    this.setState(mat, healthScore, isFaulted, 0);
+    return mat;
   }
 }

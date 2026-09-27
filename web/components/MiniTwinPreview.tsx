@@ -19,7 +19,7 @@ export function MiniTwinPreview({ engineId, frame }: Props) {
         borderRadius: "12px",
         overflow: "hidden",
         position: "relative",
-        height: "220px",
+        height: "420px",
         boxShadow: "0 6px 18px rgba(0, 0, 0, 0.4)",
         display: "flex",
         flexDirection: "column",

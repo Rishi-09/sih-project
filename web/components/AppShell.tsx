@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
+import { MobileBottomNav } from "./MobileBottomNav";
 import { OperatorGuideModal } from "./OperatorGuideModal";
 
 interface Props {
@@ -17,9 +18,10 @@ export function AppShell({ children }: Props) {
       <Sidebar onOpenGuide={() => setGuideOpen(true)} />
       <div className="app-main-content">
         <TopBar onOpenGuide={() => setGuideOpen(true)} />
-        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+        <div className="app-page-body" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
           {children}
         </div>
+        <MobileBottomNav onOpenGuide={() => setGuideOpen(true)} />
       </div>
       <OperatorGuideModal isOpen={guideOpen} onClose={() => setGuideOpen(false)} />
     </div>

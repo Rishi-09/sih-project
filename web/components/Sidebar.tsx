@@ -27,7 +27,7 @@ export function Sidebar({ onOpenGuide }: Props) {
         </div>
         <div className="brand-text">
           <div className="brand-title">
-            <span>EXON</span>
+            <span>RETRIBUTION</span>
             <span className="brand-tag">TWIN</span>
           </div>
           <span className="brand-subtitle">ROTAX 915 iS UAV FLEET</span>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { api } from "../lib/api";
 
 const FAULT_TYPES = [
   "lubrication_degradation",
@@ -80,7 +81,9 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
       }
     };
 
-    const events = ["pointermove", "pointerdown", "keydown", "wheel", "touchstart", "scroll"];
+    // Only intentional user inputs (click, touch, keydown) reset the idle activity timer.
+    // Passive mouse hovering (pointermove) or scrolling no longer resets it.
+    const events = ["pointerdown", "keydown", "touchstart"];
     events.forEach((evt) => window.addEventListener(evt, handleUserActivity, { passive: true }));
 
     return () => {
@@ -99,8 +102,9 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
 
       if (remaining <= 0) {
         clearInterval(interval);
-        setIdleNotice("Simulator auto-stopped after 2 min of inactivity to conserve Railway credits.");
+        setIdleNotice("Simulator auto-stopped after 2 min of inactivity to conserve compute resources.");
         onStopRef.current();
+        api.stopRun(runId).catch(() => {});
       }
     }, 1000);
 

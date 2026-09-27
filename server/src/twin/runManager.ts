@@ -119,6 +119,22 @@ export function getLastActivityAt(runId: string): number | undefined {
   return runs.get(runId)?.lastActivityAt;
 }
 
+// 2-minute server-side idle auto-kill watchdog (conserves cloud credits and ensures inactive UAVs auto-stop)
+const IDLE_TIMEOUT_MS = 120_000; // 2 minutes
+setInterval(async () => {
+  const now = Date.now();
+  for (const [runId, entry] of runs.entries()) {
+    if (entry.status === "live" && entry.lastActivityAt && now - entry.lastActivityAt > IDLE_TIMEOUT_MS) {
+      console.log(`[Watchdog] Auto-stopping UAV run ${runId} after 2 minutes of idle inactivity.`);
+      try {
+        await stopRun(runId);
+      } catch (err) {
+        console.error(`Error auto-stopping idle run ${runId}:`, err);
+      }
+    }
+  }
+}, 4000);
+
 export function injectFault(runId: string, req: FaultRequest) {
   const entry = runs.get(runId);
   if (!entry) throw new Error(`Unknown or inactive runId ${runId}`);
