@@ -6,9 +6,10 @@ import { usePathname } from "next/navigation";
 
 interface Props {
   onOpenGuide?: () => void;
+  onOpenTutorial?: () => void;
 }
 
-export function Sidebar({ onOpenGuide }: Props) {
+export function Sidebar({ onOpenGuide, onOpenTutorial }: Props) {
   const pathname = usePathname();
 
   const isHome = pathname === "/";
@@ -96,11 +97,25 @@ export function Sidebar({ onOpenGuide }: Props) {
       <div className="sidebar-footer">
         <div className="quick-action-card">
           <div className="quick-card-title">
-            <span>💡</span> Need Help?
+            <span>🎓</span> Learn The System
           </div>
           <div className="quick-card-desc">
-            New to the digital twin? View the quick 3-step operator walkthrough.
+            Interactive scenarios explaining all buttons, gauges & tactical decisions.
           </div>
+          <button
+            type="button"
+            className="btn-quick-launch"
+            style={{
+              background: "linear-gradient(135deg, rgba(16, 185, 129, 0.25) 0%, rgba(5, 150, 105, 0.35) 100%)",
+              borderColor: "rgba(16, 185, 129, 0.4)",
+              color: "#6ee7b7",
+              marginBottom: "8px",
+            }}
+            onClick={onOpenTutorial}
+          >
+            <span>Interactive Tutorial</span>
+            <span>→</span>
+          </button>
           <button
             type="button"
             className="btn-quick-launch"

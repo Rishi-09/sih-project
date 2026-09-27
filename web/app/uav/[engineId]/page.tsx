@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { EngineSummary } from "@/lib/types";
 import { api } from "@/lib/api";
 import { useTwinSocket } from "@/lib/socket";
@@ -12,8 +12,10 @@ import { WhatIfPlanner } from "@/components/WhatIfPlanner";
 import { DetailTabs } from "@/components/DetailTabs";
 import { ControlBar } from "@/components/ControlBar";
 import { MiniTwinPreview } from "@/components/MiniTwinPreview";
+import { StartupEngageConsole } from "@/components/StartupEngageConsole";
 
 export default function ConsolePage() {
+  const router = useRouter();
   const params = useParams<{ engineId: string }>();
   const engineId = params.engineId;
 
@@ -62,6 +64,17 @@ export default function ConsolePage() {
   async function handleStart(scenario: string) {
     const { runId: newRunId } = await api.startRun(engineId, scenario);
     setRunId(newRunId);
+    try {
+      sessionStorage.setItem(
+        "active_sortie",
+        JSON.stringify({
+          runId: newRunId,
+          engineId,
+          tail: engine?.tail ?? "UAV",
+          startedAt: Date.now(),
+        })
+      );
+    } catch {}
   }
 
   async function handleStop() {
@@ -73,6 +86,9 @@ export default function ConsolePage() {
     }
     setRunId(null);
     setRunDead(false);
+    try {
+      sessionStorage.removeItem("active_sortie");
+    } catch {}
   }
 
   async function handleInjectFault(type: string, severity: number, cylinder?: number) {
@@ -170,7 +186,7 @@ export default function ConsolePage() {
             No active sortie for {engine.tail}. Start one above to bring live physics and ML diagnostics online.
           </div>
         </>
-      ) : !frame ? (
+      ) : runDead ? (
         <>
           <div className="panel">
             <ControlBar
@@ -182,40 +198,57 @@ export default function ConsolePage() {
               onClearFaults={handleClearFaults}
             />
           </div>
-
-          {/* Point 7: Interactive Telemetry Connection Card */}
           <div
             className="empty-state"
             style={{
               marginTop: 14,
               padding: "24px",
               background: "#131b22",
-              border: "1px solid rgba(56, 189, 248, 0.2)",
+              border: "1px solid rgba(248, 113, 113, 0.3)",
               borderRadius: "10px",
               textAlign: "center",
             }}
           >
-            {runDead ? (
-              <>
-                <div style={{ color: "#f87171", fontWeight: 700, fontSize: "14px" }}>
-                  Sortie process is no longer active on the server.
-                </div>
-                <div style={{ fontSize: 12.5, marginTop: 8, color: "#94a3b8" }}>
-                  It was likely ended by a server restart. Stop it to clear the console, then start a new one.
-                </div>
-              </>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#38bdf8", fontWeight: 700, fontSize: "14px" }}>
-                  <span className="spinner-icon-anim">⚙️</span>
-                  <span>Connecting to Live 1 Hz Telemetry Stream...</span>
-                </div>
-                <div style={{ fontSize: "12px", color: "#64748b" }}>
-                  Simulator socket handshake in progress. Telemetry frame will appear in seconds.
-                </div>
-              </div>
-            )}
+            <div style={{ color: "#f87171", fontWeight: 700, fontSize: "14px" }}>
+              Sortie process is no longer active on the server.
+            </div>
+            <div style={{ fontSize: 12.5, marginTop: 8, color: "#94a3b8" }}>
+              It was likely ended by a server restart. Stop it to clear the console, then start a new one.
+            </div>
           </div>
+        </>
+      ) : !frame || frame.phase === "startup" || frame.phase === "taxi" || frame.mission?.recommendation === "assessing" ? (
+        <>
+          <div className="panel">
+            <ControlBar
+              runId={runId}
+              injected={frame?.injectedFaults ?? []}
+              onStart={handleStart}
+              onStop={handleStop}
+              onInjectFault={handleInjectFault}
+              onClearFaults={handleClearFaults}
+            />
+          </div>
+
+          <StartupEngageConsole
+            engine={engine}
+            runId={runId}
+            frame={frame}
+            onExploreBackground={() => {
+              try {
+                sessionStorage.setItem(
+                  "active_sortie",
+                  JSON.stringify({
+                    runId,
+                    engineId: engine.id,
+                    tail: engine.tail,
+                    startedAt: Date.now(),
+                  })
+                );
+              } catch {}
+              router.push("/fleet");
+            }}
+          />
         </>
       ) : (
         <>

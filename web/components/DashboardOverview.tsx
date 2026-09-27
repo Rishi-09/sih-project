@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { EngineSummary } from "@/lib/types";
 import { AiScanModal } from "./AiScanModal";
+import { TutorialScenarioModal } from "./TutorialScenarioModal";
 
 interface Props {
   initialEngines: EngineSummary[];
@@ -13,6 +14,7 @@ export function DashboardOverview({ initialEngines }: Props) {
   const [engines] = useState<EngineSummary[]>(initialEngines);
   const [scanning, setScanning] = useState(false);
   const [scanModalOpen, setScanModalOpen] = useState(false);
+  const [tutorialModalOpen, setTutorialModalOpen] = useState(false);
   const [healthScore, setHealthScore] = useState(76);
   const [filterView, setFilterView] = useState("all");
   const [activeTimeTab, setActiveTimeTab] = useState("1D");
@@ -75,6 +77,55 @@ export function DashboardOverview({ initialEngines }: Props) {
 
   return (
     <div className="dashboard-grid-container">
+      {/* Interactive Tutorial Scenario Banner */}
+      <div
+        style={{
+          background: "linear-gradient(90deg, rgba(16, 185, 129, 0.12) 0%, rgba(2, 132, 199, 0.12) 100%)",
+          border: "1px solid rgba(16, 185, 129, 0.3)",
+          borderRadius: "10px",
+          padding: "12px 18px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "12px",
+          marginBottom: "16px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <span style={{ fontSize: "22px" }}>🎓</span>
+          <div>
+            <div style={{ fontSize: "13.5px", fontWeight: 700, color: "#f8fafc" }}>
+              DRDO Tactical Operator Training &amp; Interactive Scenario
+            </div>
+            <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+              Practice reading telemetry, 75s spooling baselines, fault injection, and making real AI Derate vs. Land decisions.
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setTutorialModalOpen(true)}
+          style={{
+            background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+            color: "#ffffff",
+            border: "1px solid rgba(52, 211, 153, 0.4)",
+            padding: "8px 16px",
+            borderRadius: "8px",
+            fontSize: "12.5px",
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)",
+          }}
+        >
+          <span>Start Interactive Tutorial</span>
+          <span>→</span>
+        </button>
+      </div>
+
       {/* ROW 1: System Health & AI Threat Forecast (Directly matching image) */}
       <div className="dashboard-row-top">
         {/* Card 1: System Health */}
@@ -557,6 +608,7 @@ export function DashboardOverview({ initialEngines }: Props) {
       </div>
 
       <AiScanModal isOpen={scanModalOpen} onClose={() => setScanModalOpen(false)} />
+      <TutorialScenarioModal isOpen={tutorialModalOpen} onClose={() => setTutorialModalOpen(false)} />
     </div>
   );
 }

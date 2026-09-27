@@ -6,9 +6,10 @@ import { usePathname } from "next/navigation";
 
 interface Props {
   onOpenGuide?: () => void;
+  onOpenTutorial?: () => void;
 }
 
-export function MobileBottomNav({ onOpenGuide }: Props) {
+export function MobileBottomNav({ onOpenGuide, onOpenTutorial }: Props) {
   const pathname = usePathname();
 
   const isHome = pathname === "/";
@@ -45,10 +46,20 @@ export function MobileBottomNav({ onOpenGuide }: Props) {
       <button
         type="button"
         className="mobile-nav-item"
+        onClick={onOpenTutorial}
+        style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}
+      >
+        <span style={{ fontSize: 19 }}>🎓</span>
+        <span>Tutorial</span>
+      </button>
+
+      <button
+        type="button"
+        className="mobile-nav-item"
         onClick={onOpenGuide}
         style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}
       >
-        <span style={{ fontSize: 20 }}>💡</span>
+        <span style={{ fontSize: 19 }}>💡</span>
         <span>Guide</span>
       </button>
     </nav>

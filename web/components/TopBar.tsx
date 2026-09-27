@@ -7,9 +7,10 @@ import { AiScanModal } from "./AiScanModal";
 
 interface Props {
   onOpenGuide?: () => void;
+  onOpenTutorial?: () => void;
 }
 
-export function TopBar({ onOpenGuide }: Props) {
+export function TopBar({ onOpenGuide, onOpenTutorial }: Props) {
   const pathname = usePathname();
   const [scanModalOpen, setScanModalOpen] = useState(false);
 
@@ -52,6 +53,22 @@ export function TopBar({ onOpenGuide }: Props) {
         </div>
 
         <div className="topbar-actions">
+          {/* Interactive Tutorial Button */}
+          <button
+            type="button"
+            className="btn-run-ai"
+            style={{
+              background: "linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.3) 100%)",
+              borderColor: "rgba(16, 185, 129, 0.45)",
+              color: "#6ee7b7",
+            }}
+            onClick={onOpenTutorial}
+            title="Launch Interactive Tutorial Scenario (Buttons, Gauges & Decision Training)"
+          >
+            <span style={{ fontSize: "13px" }}>🎓</span>
+            <span>Tutorial</span>
+          </button>
+
           <button
             type="button"
             className="btn-run-ai"

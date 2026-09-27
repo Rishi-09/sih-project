@@ -410,7 +410,14 @@ export class ReliabilityEngine {
       limiters.find((l) => l.beyondCaution || l.headroomPct < 40) ??
       null;
 
-    const alreadyBreached = limiters.find((l) => l.secondsToLimit === 0);
+    // Only count as alreadyBreached if the CURRENT live reading has genuinely crossed the limit right now.
+    // Checking `secondsToLimit === 0` was buggy because a projected future drop at lower power in a flight leg
+    // returned 0 for the first leg, falsely calling "land immediately" on a 100% healthy engine!
+    const alreadyBreached = limiters.find((l) => {
+      if (l.limitKind === "high") return l.value >= l.limit;
+      if (l.limitKind === "low") return l.value <= l.limit;
+      return false;
+    });
     const criticalAlert = frame.alerts.some((a) => a.severity === "critical");
 
     const { recommendation, derateTo, reason } = this.decide({
