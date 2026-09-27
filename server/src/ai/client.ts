@@ -30,6 +30,7 @@ export async function generateAdvisory(frame: TickFrame): Promise<AdvisoryResult
     `Known-fault reference: ${kb.description}`,
     twinEvidence(frame),
     `Mission state: P(success)=${frame.mission.pSuccess}, recommendation=${frame.mission.recommendation}.`,
+    `Time remaining: mission remaining=${fmtDuration(frame.mission.missionRemainingSec)}, safe endurance=${fmtDuration(frame.mission.safeEnduranceSec)}, time to redline at current power=${fmtDuration(frame.prognosis.rulSec)}.`,
     "Write the advisory now, following the required structure.",
   ]
     .filter(Boolean)
@@ -97,6 +98,12 @@ export async function answerChat(question: string, recentFrames: TickFrame[]): P
   }
 }
 
+function fmtDuration(s: number | null): string {
+  if (s === null) return "n/a";
+  const m = Math.floor(s / 60);
+  return `${m}m ${Math.round(s % 60)}s`;
+}
+
 function topResiduals(frame: TickFrame, n: number): [string, number][] {
   return Object.entries(frame.residualZ)
     .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
@@ -113,7 +120,8 @@ function summarizeFrames(frames: TickFrame[]): string {
     `top residuals: ${evidence.map(([c, z]) => `${c}=${z}σ`).join(", ")}`,
     `sensor fault: ${latest.diagnosis.sensorFault.channel ?? "none"}`,
     twinEvidence(latest),
-    `mission: pSuccess=${latest.mission.pSuccess}, recommendation=${latest.mission.recommendation}`,
+    `mission: pSuccess=${latest.mission.pSuccess}, recommendation=${latest.mission.recommendation}, reason="${latest.mission.reason}"`,
+    `time remaining: mission remaining=${fmtDuration(latest.mission.missionRemainingSec)}, safe endurance=${fmtDuration(latest.mission.safeEnduranceSec)}, time to redline at current power=${fmtDuration(latest.prognosis.rulSec)}`,
     `open alerts: ${latest.alerts.map((a) => a.code).join(", ") || "none"}`,
   ].join("\n");
 }
