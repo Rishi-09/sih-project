@@ -14,6 +14,9 @@ import asyncio
 import logging
 import sys
 
+# Prevent Windows Application Control policy error on pyarrow DLL by disabling optional pyarrow
+sys.modules['pyarrow'] = None
+
 from server_ops.config import OPS_WS_PORT, DEFAULT_SPEED_MULTIPLIER
 from server_ops.ops_loop import OpsSimulationManager
 from server_ops.ops_ws_server import OpsWSServer
