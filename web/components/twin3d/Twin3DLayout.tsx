@@ -28,7 +28,7 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
       >
         <aside className={`ide-panel ide-panel-left ${leftCollapsed ? "collapsed" : ""}`}>
           <div className="panel-tab-header">
-            {!leftCollapsed && <span className="tab-active">SIMULATOR TELEMETRY</span>}
+            {!leftCollapsed && <span className="tab-active">RADAR SENSOR BUS // MIL-STD-1553</span>}
             <button
               type="button"
               className="panel-collapse-btn"
@@ -61,7 +61,7 @@ export function Twin3DLayout({ leftPanel, centerCanvas, rightPanel, bottomLog }:
             >
               {rightCollapsed ? <IconChevronLeft width={13} height={13} /> : <IconChevronRight width={13} height={13} />}
             </button>
-            {!rightCollapsed && <span className="tab-active">AI / ML PREDICTOR</span>}
+            {!rightCollapsed && <span className="tab-active">AI SURVIVABILITY & COMBAT DIAGNOSTICS</span>}
           </div>
           {!rightCollapsed && <div className="panel-content">{rightPanel}</div>}
         </aside>

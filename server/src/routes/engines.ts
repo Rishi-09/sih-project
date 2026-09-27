@@ -1,3 +1,5 @@
+import { stopClock } from "./runs";
+import { stopRun } from "../twin/runManager";
 import { Router } from "express";
 import { prisma } from "../db/client";
 import { getLatestFrame } from "../twin/runManager";
@@ -87,19 +89,33 @@ enginesRouter.post("/", async (req, res) => {
 enginesRouter.delete("/:id", async (req, res) => {
   try {
     const engineId = req.params.id;
-    // Delete associated frames, alerts, reports, messages and runs
     const runs = await prisma.run.findMany({ where: { engineId }, select: { id: true } });
     const runIds = runs.map((r) => r.id);
 
-    if (runIds.length > 0) {
-      await prisma.frame.deleteMany({ where: { runId: { in: runIds } } });
-      await prisma.alert.deleteMany({ where: { runId: { in: runIds } } });
-      await prisma.report.deleteMany({ where: { runId: { in: runIds } } });
-      await prisma.chatMessage.deleteMany({ where: { runId: { in: runIds } } });
-      await prisma.run.deleteMany({ where: { engineId } });
+    // 1. Halt all in-memory run clocks and socket emitters
+    for (const runId of runIds) {
+      stopClock(runId);
+      try {
+        await stopRun(runId);
+      } catch {
+        /* already stopped */
+      }
     }
 
-    await prisma.engine.delete({ where: { id: engineId } });
+    // 2. Cascade delete dependent records atomically
+    if (runIds.length > 0) {
+      await prisma.$transaction([
+        prisma.frame.deleteMany({ where: { runId: { in: runIds } } }),
+        prisma.alert.deleteMany({ where: { runId: { in: runIds } } }),
+        prisma.report.deleteMany({ where: { runId: { in: runIds } } }),
+        prisma.chatMessage.deleteMany({ where: { runId: { in: runIds } } }),
+        prisma.run.deleteMany({ where: { engineId } }),
+        prisma.engine.delete({ where: { id: engineId } }),
+      ]);
+    } else {
+      await prisma.engine.delete({ where: { id: engineId } });
+    }
+
     res.json({ ok: true });
   } catch (err) {
     console.error("Failed to delete engine:", err);

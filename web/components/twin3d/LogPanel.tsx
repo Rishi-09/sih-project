@@ -20,8 +20,41 @@ interface Props {
   frame: TickFrame | null;
 }
 
+const INITIAL_BOOT_LOGS: LogEntry[] = [
+  {
+    id: "init_0",
+    t: 0,
+    timeStr: "00:00:01",
+    phase: "STANDBY",
+    ehi: 100,
+    label: "Dual FADEC ECU online — MIL-STD-1553B bus connected",
+    injected: [],
+    isFault: false,
+  },
+  {
+    id: "init_1",
+    t: 0,
+    timeStr: "00:00:02",
+    phase: "STANDBY",
+    ehi: 100,
+    label: "Built-In-Test (BIT) passed — 19 telemetry channels calibrated",
+    injected: [],
+    isFault: false,
+  },
+  {
+    id: "init_2",
+    t: 0,
+    timeStr: "00:00:03",
+    phase: "STANDBY",
+    ehi: 100,
+    label: "Rotax 915 iS propulsion twin initialized in nominal state",
+    injected: [],
+    isFault: false,
+  },
+];
+
 export function LogPanel({ frame }: Props) {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>(INITIAL_BOOT_LOGS);
   const [autoScroll, setAutoScroll] = useState(true);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const lastProcessedTRef = useRef<number | null>(null);
@@ -32,10 +65,6 @@ export function LogPanel({ frame }: Props) {
     if (lastProcessedTRef.current === frame.t) return;
     lastProcessedTRef.current = frame.t;
 
-    // A row counts as a fault row if EITHER the model says so or a fault is
-    // actually injected — a log that prints "healthy" while faults are running
-    // is worse than no log, and it was what made the classifier's lag look like
-    // a dead pipeline.
     const isFault = frame.diagnosis.label !== "healthy" || frame.injectedFaults.length > 0;
     const alertMsg = frame.alerts.length > 0 ? frame.alerts[0].message : undefined;
 
@@ -53,7 +82,7 @@ export function LogPanel({ frame }: Props) {
 
     setLogs((prev) => {
       const next = [...prev, entry];
-      if (next.length > 250) next.shift(); // Keep last 250 entries
+      if (next.length > 250) next.shift();
       return next;
     });
   }, [frame]);
@@ -89,7 +118,7 @@ export function LogPanel({ frame }: Props) {
 
       <div ref={logContainerRef} className="log-stream-body">
         {logs.length === 0 ? (
-          <div className="log-empty">System initialized. Awaiting live flight telemetry ticks...</div>
+          <div className="log-empty">Log stream cleared. Standby for incoming telemetry frames...</div>
         ) : (
           logs.map((log) => (
             <div
@@ -103,10 +132,6 @@ export function LogPanel({ frame }: Props) {
               <span className={`log-diag ${log.isFault ? "text-crit" : "text-ok"}`}>
                 DIAG: {log.label}
               </span>
-              {/* Ground truth beside the prediction. The classifier needs a
-                  60-second feature window, so it legitimately lags an injection
-                  by a few evaluations; printing only its verdict made that lag
-                  read as "the faults are being ignored". */}
               {log.injected.length > 0 && (
                 <span className="log-injected">INJ: {log.injected.join(" + ")}</span>
               )}

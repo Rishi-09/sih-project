@@ -2,26 +2,25 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { EngineSummary } from "@/lib/types";
 import { api } from "@/lib/api";
-import { IconAircraft, IconClose, IconPlus, IconTwin } from "@/components/Icons";
+import { QuickMetricsStrip } from "@/components/QuickMetricsStrip";
 
 interface Props {
   initialEngines: EngineSummary[];
 }
 
 export function FleetManager({ initialEngines }: Props) {
+  const router = useRouter();
   const [engines, setEngines] = useState<EngineSummary[]>(initialEngines);
-  const [loading, setLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newTail, setNewTail] = useState("");
   const [newModel, setNewModel] = useState("Rotax 915 iS, 4-cyl boxer, turbo, FADEC");
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [engineToDelete, setEngineToDelete] = useState<{ id: string; tail: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<{ id: string; tail: string } | null>(null);
-  const [deleteBlockedMsg, setDeleteBlockedMsg] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Poll fleet status every 3s to keep EHI & live sortie tags in sync
   useEffect(() => {
@@ -77,27 +76,34 @@ export function FleetManager({ initialEngines }: Props) {
     }
   };
 
-  const handleRequestDelete = (e: React.MouseEvent, id: string, tail: string) => {
+  const handleInitiateDelete = (e: React.MouseEvent, id: string, tail: string) => {
     e.preventDefault();
     e.stopPropagation();
     if (engines.length <= 1) {
-      setDeleteBlockedMsg("At least one aircraft must remain in the fleet.");
+      setError("At least one aircraft must remain in the fleet.");
       return;
     }
-    setPendingDelete({ id, tail });
+    setError(null);
+    setEngineToDelete({ id, tail });
   };
 
   const handleConfirmDelete = async () => {
-    if (!pendingDelete) return;
-    const { id } = pendingDelete;
+    if (!engineToDelete) return;
+    const { id } = engineToDelete;
     setDeletingId(id);
-    setDeleteError(null);
+    setError(null);
     try {
-      await api.deleteEngine(id);
       setEngines((prev) => prev.filter((eng) => eng.id !== id));
-      setPendingDelete(null);
+      setEngineToDelete(null);
+      await api.deleteEngine(id);
     } catch (err) {
-      setDeleteError((err as Error).message);
+      setError(`Failed to remove aircraft: ${(err as Error).message}`);
+      try {
+        const refreshed = await api.engines();
+        setEngines(refreshed);
+      } catch {
+        // silent fail
+      }
     } finally {
       setDeletingId(null);
     }
@@ -110,27 +116,66 @@ export function FleetManager({ initialEngines }: Props) {
   return (
     <div className="fleet-container">
       <header className="fleet-header">
-        <div>
-          <h1>Fleet</h1>
-          <div className="fleet-stats">
-            <span>{engines.length} aircraft</span>
-            <span className="stats-dot">•</span>
-            <span className={activeSortiesCount > 0 ? "stats-live" : ""}>
-              {activeSortiesCount} active sortie{activeSortiesCount === 1 ? "" : "s"}
-            </span>
+        <div className="fleet-header-main">
+          <Link href="/" className="drdo-fleet-logo-link" title="DRDO Fleet Command Overview">
+            <img src="/drdo-logo.png" alt="DRDO Emblem" className="drdo-fleet-logo" />
+          </Link>
+          <div>
+            <h1>UAV FLEET COMMAND</h1>
+            <div className="fleet-stats">
+              <span>{engines.length} Aircraft</span>
+              <span className="stats-dot">•</span>
+              <span className={activeSortiesCount > 0 ? "stats-live" : ""}>
+                {activeSortiesCount} Active Flight{activeSortiesCount === 1 ? "" : "s"}
+              </span>
+              <span className="stats-dot">•</span>
+              <span className="stats-hint">MIL-STD-1553B Telemetry</span>
+            </div>
           </div>
         </div>
 
-        <button className="btn btn-primary add-engine-btn" onClick={handleOpenAddModal}>
-          <IconPlus width={14} height={14} /> Add aircraft
-        </button>
+        <div className="fleet-header-actions">
+          <button className="btn btn-primary add-engine-btn" onClick={handleOpenAddModal}>
+            + Add Aircraft
+          </button>
+        </div>
       </header>
+
+      {/* High-density real telemetry strip */}
+      <QuickMetricsStrip
+        totalAirframes={engines.length}
+        activeSorties={activeSortiesCount}
+      />
+
+      {error && (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 18px",
+          background: "rgba(239, 68, 68, 0.15)",
+          border: "1px solid rgba(239, 68, 68, 0.4)",
+          borderRadius: "8px",
+          marginBottom: "20px",
+          color: "#fca5a5",
+          fontSize: "13px"
+        }}>
+          <span>⚠️ {error}</span>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            style={{ background: "none", border: "none", color: "#fca5a5", cursor: "pointer", fontSize: "16px" }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {engines.length === 0 ? (
         <div className="empty-state">
-          <p>No aircraft in the fleet yet.</p>
+          <p>No aircraft found in fleet.</p>
           <button className="btn btn-primary" onClick={handleOpenAddModal}>
-            <IconPlus width={14} height={14} /> Add first aircraft
+            Add First Aircraft (UAV-01)
           </button>
         </div>
       ) : (
@@ -141,59 +186,81 @@ export function FleetManager({ initialEngines }: Props) {
 
             return (
               <div key={e.id} className="fleet-card-wrapper">
-                {/* The digital twin is the primary destination — the console
-                    (raw telemetry/controls) is one click further in, not the
-                    other way around. */}
-                <Link href={`/uav/${e.id}/twin3d`} className="fleet-card">
+                <div
+                  className="fleet-card"
+                  style={{ cursor: "pointer" }}
+                  onClick={(evt) => {
+                    const target = evt.target as HTMLElement;
+                    if (
+                      target.closest(".btn-card-delete") ||
+                      target.closest(".twin3d-pill") ||
+                      target.closest(".fleet-card-actions")
+                    ) {
+                      return;
+                    }
+                    router.push(`/uav/${e.id}`);
+                  }}
+                >
                   <div className="fleet-card-top">
                     <div className="tail-section">
-                      <IconAircraft className="aircraft-icon" />
+                      <span className="aircraft-icon">✈</span>
                       <span className="tail">{e.tail}</span>
+                      <span className="drdo-card-badge">DRDO</span>
                     </div>
 
-                    <div className="fleet-card-actions">
+                    <div className="fleet-card-actions" onClick={(evt) => evt.stopPropagation()}>
                       <span className={`status status-${e.latestRunStatus ?? "idle"}`}>
-                        {e.latestRunStatus ?? "idle"}
+                        {e.latestRunStatus === "live" ? "Live" : e.latestRunStatus ?? "Standby"}
                       </span>
                       {engines.length > 1 && (
                         <button
                           type="button"
                           className="btn-card-delete"
                           title={`Remove ${e.tail}`}
+                          aria-label={`Remove ${e.tail}`}
                           disabled={deletingId === e.id}
-                          onClick={(evt) => handleRequestDelete(evt, e.id, e.tail)}
+                          onClick={(evt) => handleInitiateDelete(evt, e.id, e.tail)}
                         >
-                          <IconClose width={13} height={13} />
+                          {deletingId === e.id ? "…" : "×"}
                         </button>
                       )}
                     </div>
                   </div>
 
-                  <div className="model">{e.model}</div>
+                  <div className="model">Rotax 915 iS Turbo</div>
 
                   <div className="ehi-section">
                     <div className="ehi-badge">
-                      <span className="ehi-label">Condition:</span>
+                      <span className="ehi-label">Health</span>
                       <span className="ehi-value">
-                        {e.ehi !== null ? `EHI ${Math.round(e.ehi)}/100` : "No active sortie"}
+                        {e.ehi !== null ? `${Math.round(e.ehi)}%` : "Ready"}
                       </span>
+                    </div>
+                    <div className="ehi-track-wrapper">
+                      <div 
+                        className="ehi-track-fill" 
+                        style={{ 
+                          width: e.ehi !== null ? `${Math.min(100, Math.max(10, e.ehi))}%` : "100%",
+                          backgroundColor: e.ehi !== null 
+                            ? (e.ehi < 70 ? "var(--critical)" : e.ehi < 85 ? "var(--caution)" : "var(--ok)") 
+                            : "rgba(56, 189, 248, 0.4)"
+                        }} 
+                      />
                     </div>
                     {(isLive || isDegraded) && <span className="live-pulse-dot" />}
                   </div>
 
                   <div className="fleet-card-footer">
-                    <span className="btn-link">
-                      <IconTwin width={13} height={13} /> Open digital twin
-                    </span>
+                    <span className="btn-link">Console →</span>
                     <Link
-                      href={`/uav/${e.id}`}
-                      className="console-pill"
+                      href={`/uav/${e.id}/twin3d`}
+                      className="twin3d-pill"
                       onClick={(evt) => evt.stopPropagation()}
                     >
-                      Data console
+                      3D Twin ◈
                     </Link>
                   </div>
-                </Link>
+                </div>
               </div>
             );
           })}
@@ -203,13 +270,11 @@ export function FleetManager({ initialEngines }: Props) {
             type="button"
             className="fleet-card add-card"
             onClick={handleOpenAddModal}
-            title="Add another aircraft to monitor independently"
+            title="Add aircraft"
           >
-            <div className="add-icon-circle">
-              <IconPlus width={18} height={18} />
-            </div>
-            <div className="add-title">Add aircraft</div>
-            <div className="add-sub">Deploy a new independent digital twin</div>
+            <div className="add-icon-circle">+</div>
+            <div className="add-title">Add Aircraft</div>
+            <div className="add-sub">Deploy new digital twin</div>
           </button>
         </div>
       )}
@@ -219,19 +284,19 @@ export function FleetManager({ initialEngines }: Props) {
         <div className="modal-backdrop" onClick={() => setShowAddModal(false)}>
           <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Add aircraft</h2>
-              <button className="modal-close" onClick={() => setShowAddModal(false)} aria-label="Close">
-                <IconClose width={16} height={16} />
+              <h2>Deploy Aircraft Twin</h2>
+              <button className="modal-close" onClick={() => setShowAddModal(false)}>
+                ×
               </button>
             </div>
 
             <form onSubmit={handleCreateEngine}>
               <p className="modal-description">
-                Runs its own telemetry and physics simulation, independent of the rest of the fleet.
+                Add an aircraft instance to monitor with live telemetry and 3D digital twin.
               </p>
 
               <div className="form-group">
-                <label htmlFor="tail-input">Tail ID</label>
+                <label htmlFor="tail-input">Tail ID / Registration</label>
                 <input
                   id="tail-input"
                   type="text"
@@ -267,7 +332,7 @@ export function FleetManager({ initialEngines }: Props) {
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={creating}>
-                  {creating ? "Adding…" : "Add aircraft"}
+                  {creating ? "Deploying…" : "Deploy Aircraft"}
                 </button>
               </div>
             </form>
@@ -275,32 +340,25 @@ export function FleetManager({ initialEngines }: Props) {
         </div>
       )}
 
-      {/* Delete confirmation — replaces window.confirm, which is inconsistent
-          across browsers and reads as unfinished in a monitoring console. */}
-      {pendingDelete && (
-        <div className="modal-backdrop" onClick={() => !deletingId && setPendingDelete(null)}>
-          <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+      {/* Delete Confirmation Modal */}
+      {engineToDelete && (
+        <div className="modal-backdrop" onClick={() => setEngineToDelete(null)}>
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
             <div className="modal-header">
-              <h2>Remove {pendingDelete.tail}?</h2>
-              <button
-                className="modal-close"
-                onClick={() => setPendingDelete(null)}
-                disabled={!!deletingId}
-                aria-label="Close"
-              >
-                <IconClose width={16} height={16} />
+              <h2>Remove {engineToDelete.tail}?</h2>
+              <button className="modal-close" onClick={() => setEngineToDelete(null)}>
+                ×
               </button>
             </div>
-            <p className="modal-description">
-              This permanently removes the aircraft and its digital twin history. This cannot be undone.
+            <p className="modal-description" style={{ marginBottom: 20 }}>
+              Are you sure you want to remove <strong>{engineToDelete.tail}</strong> from the fleet? All associated telemetry and sortie logs will be permanently deleted.
             </p>
-            {deleteError && <div className="modal-error">{deleteError}</div>}
             <div className="modal-footer">
               <button
                 type="button"
                 className="btn"
-                onClick={() => setPendingDelete(null)}
-                disabled={!!deletingId}
+                onClick={() => setEngineToDelete(null)}
+                disabled={Boolean(deletingId)}
               >
                 Cancel
               </button>
@@ -308,29 +366,9 @@ export function FleetManager({ initialEngines }: Props) {
                 type="button"
                 className="btn btn-danger-action"
                 onClick={handleConfirmDelete}
-                disabled={!!deletingId}
+                disabled={Boolean(deletingId)}
               >
-                {deletingId ? "Removing…" : "Remove aircraft"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Blocked-delete notice — replaces window.alert for the same reason. */}
-      {deleteBlockedMsg && (
-        <div className="modal-backdrop" onClick={() => setDeleteBlockedMsg(null)}>
-          <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Can&apos;t remove aircraft</h2>
-              <button className="modal-close" onClick={() => setDeleteBlockedMsg(null)} aria-label="Close">
-                <IconClose width={16} height={16} />
-              </button>
-            </div>
-            <p className="modal-description">{deleteBlockedMsg}</p>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-primary" onClick={() => setDeleteBlockedMsg(null)}>
-                Got it
+                {deletingId === engineToDelete.id ? "Removing…" : "Remove Aircraft"}
               </button>
             </div>
           </div>

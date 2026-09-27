@@ -9,6 +9,12 @@ import { generateAdvisory, answerChat } from "../ai/client";
 
 const clocks = new Map<string, RunClock>();
 
+export function stopClock(runId: string) {
+  clocks.get(runId)?.stop();
+  clocks.delete(runId);
+}
+
+
 /** Telemetry flows over the socket; control goes over REST — see published
  * plan §B5 for why (curl-debuggable, auditable in logs, easy to reason about
  * at 2am when the fault button does nothing). */
