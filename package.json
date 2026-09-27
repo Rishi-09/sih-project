@@ -1,0 +1,12 @@
+{
+  "name": "retribution-digital-twin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Retribution - Autonomous UAV Engine Health & Prognostics Digital Twin",
+  "scripts": {
+    "dev": "node tools/dev.js",
+    "dev:server": "npm --prefix server run dev",
+    "dev:web": "npm --prefix web run dev",
+    "build": "npm --prefix server run build && npm --prefix web run build"
+  }
+}
