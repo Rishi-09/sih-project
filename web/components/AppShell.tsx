@@ -5,6 +5,7 @@ import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { MobileBottomNav } from "./MobileBottomNav";
 import { OperatorGuideModal } from "./OperatorGuideModal";
+import { InSituTutorialTour } from "./InSituTutorialTour";
 
 interface Props {
   children: React.ReactNode;
@@ -12,18 +13,27 @@ interface Props {
 
 export function AppShell({ children }: Props) {
   const [guideOpen, setGuideOpen] = useState(false);
+  const [tutorialActive, setTutorialActive] = useState(false);
 
   return (
     <div className="app-shell">
       <Sidebar onOpenGuide={() => setGuideOpen(true)} />
       <div className="app-main-content">
-        <TopBar onOpenGuide={() => setGuideOpen(true)} />
+        <TopBar onOpenGuide={() => setGuideOpen(true)} onStartTutorial={() => setTutorialActive(true)} />
         <div className="app-page-body" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
           {children}
         </div>
         <MobileBottomNav onOpenGuide={() => setGuideOpen(true)} />
       </div>
-      <OperatorGuideModal isOpen={guideOpen} onClose={() => setGuideOpen(false)} />
+      <OperatorGuideModal
+        isOpen={guideOpen}
+        onClose={() => setGuideOpen(false)}
+        onStartTutorial={() => setTutorialActive(true)}
+      />
+      <InSituTutorialTour
+        isActive={tutorialActive}
+        onClose={() => setTutorialActive(false)}
+      />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { WhatIfPlanner } from "@/components/WhatIfPlanner";
 import { DetailTabs } from "@/components/DetailTabs";
 import { ControlBar } from "@/components/ControlBar";
 import { MiniTwinPreview } from "@/components/MiniTwinPreview";
+import { StartupEngageConsole } from "@/components/StartupEngageConsole";
 
 export default function ConsolePage() {
   const params = useParams<{ engineId: string }>();
@@ -20,6 +21,8 @@ export default function ConsolePage() {
   const [engine, setEngine] = useState<EngineSummary | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [loadingEngine, setLoadingEngine] = useState(true);
+  const [bypassWarmup, setBypassWarmup] = useState(false);
+  const [bgExploreMode, setBgExploreMode] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,6 +116,8 @@ export default function ConsolePage() {
   }
 
   const frame = twin.latest;
+  const hasFault = Boolean(frame?.injectedFaults && frame.injectedFaults.length > 0);
+  const inWarmup = Boolean(frame && frame.t < 75 && !hasFault && !bypassWarmup);
 
   return (
     <main className="console">
@@ -229,8 +234,116 @@ export default function ConsolePage() {
             )}
           </div>
         </>
+      ) : inWarmup ? (
+        <>
+          {!bgExploreMode ? (
+            <StartupEngageConsole
+              frame={frame}
+              engineId={engineId}
+              tail={engine.tail}
+              onExploreBackground={() => setBgExploreMode(true)}
+              onViewTelemetry={() => setBypassWarmup(true)}
+            />
+          ) : (
+            <div
+              style={{
+                background: "rgba(2, 132, 199, 0.15)",
+                border: "1px solid rgba(56, 189, 248, 0.4)",
+                borderRadius: "10px",
+                padding: "12px 18px",
+                marginBottom: "16px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 10,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="status-dot" style={{ background: "#38bdf8" }} />
+                <span style={{ fontSize: "13px", fontWeight: 700, color: "#38bdf8" }}>
+                  FADEC Spooling in Background (T+{Math.round(frame.t)}s / 75s)
+                </span>
+                <span style={{ fontSize: "12px", color: "#94a3b8" }}>
+                  Telemetry stream active. You are free to explore.
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  className="btn"
+                  onClick={() => setBgExploreMode(false)}
+                  style={{ fontSize: "11px", padding: "4px 10px" }}
+                >
+                  Expand Spooler View
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setBypassWarmup(true)}
+                  style={{ fontSize: "11px", padding: "4px 10px" }}
+                >
+                  Open Live Cockpit ⚡
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="panel panel-controls" style={{ marginBottom: "16px" }}>
+            <ControlBar
+              runId={runId}
+              injected={frame.injectedFaults}
+              onStart={handleStart}
+              onStop={handleStop}
+              onInjectFault={handleInjectFault}
+              onClearFaults={handleClearFaults}
+            />
+          </div>
+        </>
       ) : (
         <div className="console-dashboard">
+          {hasFault && (
+            <div
+              style={{
+                gridColumn: "1 / -1",
+                background: "rgba(239, 68, 68, 0.15)",
+                border: "1px solid rgba(239, 68, 68, 0.4)",
+                borderRadius: "10px",
+                padding: "12px 18px",
+                marginBottom: "6px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 12,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: "16px" }}>⚠️</span>
+                <div>
+                  <div style={{ color: "#ef4444", fontWeight: 800, fontSize: "13px" }}>
+                    SIMULATED ANOMALY ACTIVE: {frame.injectedFaults.map(f => f.replace(/_/g, " ")).join(", ").toUpperCase()}
+                  </div>
+                  <div style={{ fontSize: "11.5px", color: "#fca5a5", marginTop: 2 }}>
+                    Physical engine degradation is being injected. AI limiter models and safe endurance are actively adjusting.
+                  </div>
+                </div>
+              </div>
+              <button
+                className="btn"
+                onClick={handleClearFaults}
+                style={{
+                  background: "#1e293b",
+                  border: "1px solid rgba(239,68,68,0.4)",
+                  color: "#fca5a5",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  padding: "5px 12px",
+                }}
+              >
+                Clear Injected Anomaly
+              </button>
+            </div>
+          )}
+
           <div className="console-col-left">
             <MissionStatus mission={frame.mission} />
 

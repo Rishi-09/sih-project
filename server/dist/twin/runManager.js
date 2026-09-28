@@ -19,6 +19,7 @@ const stubTwin_1 = require("./stubTwin");
 const opsClient_1 = require("./opsClient");
 const alerts_1 = require("./alerts");
 const reliability_1 = require("./reliability");
+const types_1 = require("../types");
 const runs = new Map();
 const FLUSH_EVERY = 5;
 const BUFFER_SIZE = 300;
@@ -39,7 +40,7 @@ async function startRun(req) {
             engineId: req.engineId,
             scenario: req.scenario ?? "custom",
             seed,
-            contractVersion: "1.0.0",
+            contractVersion: types_1.CONTRACT_VERSION,
             missionProfile: JSON.stringify(req.missionProfile ?? {}),
             status: "live",
         },

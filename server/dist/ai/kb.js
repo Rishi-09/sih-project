@@ -1,76 +1,75 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.KNOWLEDGE_BASE = void 0;
 exports.getKbEntry = getKbEntry;
-exports.KNOWLEDGE_BASE = {
+const KNOWLEDGE_BASE = {
     healthy: {
         id: "healthy",
         label: "Healthy",
-        description: "All monitored subsystems are within their nominal residual bands.",
-        fallbackAdvisory: "**Status: Nominal.** All 19 monitored channels are tracking within expected residual bounds for the current flight condition. No action required.",
+        description: "Every health factor the physics twin estimates is at its as-built value and every sensor agrees with the others.",
+        fallbackAdvisory: "**Status: Nominal.** The physics twin explains every monitored channel with a healthy engine at the current flight condition, and no sensor disagrees with the others. No action required.",
     },
-    lubrication_degradation: {
-        id: "lubrication_degradation",
-        label: "Lubrication Degradation",
-        description: "Oil pressure drops first, followed by rising oil temperature and a mild coolant-temperature rise as lubrication breaks down.",
-        fallbackAdvisory: "**Observation:** Oil pressure is tracking below nominal, with oil temperature beginning to climb — the classic signature of a developing lubrication fault.\n\n**Probable cause:** Oil pump wear, a partial blockage in the oil circuit, or oil level/viscosity out of spec.\n\n**Recommended ground action:** Inspect oil level and condition on landing; check the oil filter and pump for wear before the next sortie.\n\n**Time criticality:** Moderate — plan for inspection at the next opportunity; escalate if oil pressure keeps declining in flight.",
+    assessing: {
+        id: "assessing",
+        label: "Assessing",
+        description: "The twin needs roughly 75 seconds of airborne data before its first assessment.",
+        fallbackAdvisory: "**Status: Assessing.** The engine is on the ground or has only just taken off. The twin needs about 75 seconds of airborne telemetry before it can estimate engine health. No judgement is available yet.",
     },
-    cooling_failure: {
-        id: "cooling_failure",
-        label: "Cooling System Failure",
-        description: "Coolant temperature rises first and keeps climbing toward the 120°C normal-operation limit — distinct from lubrication faults where oil pressure moves first.",
-        fallbackAdvisory: "**Observation:** Coolant temperature is trending up toward its normal-operation limit, with oil pressure holding steady.\n\n**Probable cause:** Coolant loss, a failing water pump, or a partially blocked radiator/cooling path — the 915 iS cools its cylinder heads by liquid, so this is the primary overheat indicator on this engine.\n\n**Recommended ground action:** Check coolant level and look for external leaks; inspect the water pump and radiator on landing.\n\n**Time criticality:** Moderate to high if the trend accelerates — sustained high coolant temperature risks head damage.",
+    turbo_degradation: {
+        id: "turbo_degradation",
+        label: "Turbocharger degradation",
+        description: "Turbo efficiency is falling: manifold pressure below what the throttle should produce, all four EGTs higher together, fuel flow and RPM down, oil slightly warmer (oil-cooled bearing).",
+        fallbackAdvisory: "**Observation:** Manifold pressure is below what this throttle and altitude should give, and all four EGTs are running hotter together. The twin attributes this to falling turbocharger efficiency, not to any single cylinder.\n\n**Probable cause:** Turbine or compressor wheel wear or rub, bearing play, wastegate actuator sticking, or an exhaust leak upstream of the turbine.\n\n**Recommended ground action:** Check turbo shaft play and wheel rub, wastegate actuator travel, and the exhaust manifold joints upstream of the turbine.\n\n**Time criticality:** Moderate. Reduced power margin hits climb and hot-day take-off first; hotter exhaust shortens turbine life.",
     },
-    ignition_fault_cyl3: {
-        id: "ignition_fault_cyl3",
-        label: "Ignition Fault (cylinder 3)",
-        description: "Cylinder 3's EGT drops sharply (unburned charge) with a step onset, along with a vibration increase and mild RPM roughness.",
-        fallbackAdvisory: "**Observation:** Cylinder 3's exhaust gas temperature has dropped sharply relative to its peers, with a step-like onset and increased vibration.\n\n**Probable cause:** A fouled or failed spark plug, ignition lead fault, or coil failure on cylinder 3.\n\n**Recommended ground action:** Inspect and, if needed, replace the spark plug and ignition lead on cylinder 3 before further flight.\n\n**Time criticality:** High if vibration is climbing — a persistent misfire risks secondary mechanical damage.",
+    induction_leak: {
+        id: "induction_leak",
+        label: "Induction leak",
+        description: "Volumetric efficiency is falling: less charge reaches the cylinders, so fuel flow and RPM drop at a given throttle while manifold pressure still reads normal.",
+        fallbackAdvisory: "**Observation:** Fuel flow and RPM are below what this throttle should give, but manifold pressure reads normal. The engine is breathing less air than the manifold reading suggests.\n\n**Probable cause:** A leak in the induction path downstream of the MAP sensor (hose, clamp, intercooler joint) or a restricted airbox.\n\n**Recommended ground action:** Pressure-test the induction system: hoses, clamps, intercooler and airbox joints.\n\n**Time criticality:** Moderate. Mainly a power-margin problem, but an unmetered leak can lean the mixture.",
     },
-    induction_loss: {
-        id: "induction_loss",
-        label: "Induction / MAP Loss",
-        description: "Manifold pressure drops at a fixed throttle setting, followed by RPM droop and a lean EGT rise — distinct from a natural high-altitude MAP rolloff.",
-        fallbackAdvisory: "**Observation:** Manifold pressure is below what this throttle/altitude combination should produce, with RPM drooping and EGTs running lean.\n\n**Probable cause:** A turbocharger or wastegate fault, an induction leak, or a partially blocked air filter.\n\n**Recommended ground action:** Inspect the turbocharger, wastegate actuator, and induction ducting for leaks or damage.\n\n**Time criticality:** Moderate — reduced power margin affects mission reliability more than immediate safety.",
+    coolant_restriction: {
+        id: "coolant_restriction",
+        label: "Coolant circuit restriction",
+        description: "Cooling effectiveness is falling: coolant temperature (and the CHTs derived from it) run hotter than the flight condition explains, oil temperature follows, and the gap grows with power.",
+        fallbackAdvisory: "**Observation:** Coolant temperature is running hotter than this power, altitude and airspeed explain, and oil temperature is following it. The gap grows with power.\n\n**Probable cause:** Low coolant, a partially blocked radiator core, a weak water pump, or a sticking thermostat.\n\n**Recommended ground action:** Check coolant level and condition, the radiator core for blockage, the pump drive and the thermostat.\n\n**Time criticality:** High at high power. Watch the time-to-limit figure; a hot-day take-off is the first thing to become unsafe.",
     },
-    fuel_system_degradation: {
-        id: "fuel_system_degradation",
-        label: "Fuel System Degradation",
-        description: "Fuel pressure drops first, followed by falling fuel flow and all four EGTs rising as the mixture leans out.",
-        fallbackAdvisory: "**Observation:** Fuel pressure and flow are both below nominal, with EGTs running lean.\n\n**Probable cause:** A clogged fuel filter, a failing fuel pump, or a restriction in the fuel line.\n\n**Recommended ground action:** Inspect and replace the fuel filter; check fuel pump output pressure on the ground.\n\n**Time criticality:** High — a worsening lean condition risks detonation and cylinder damage.",
+    oil_restriction: {
+        id: "oil_restriction",
+        label: "Oil circuit restriction",
+        description: "Oil circuit resistance is rising: oil pressure falls at a given RPM while oil temperature climbs, because less oil is flowing through the engine.",
+        fallbackAdvisory: "**Observation:** Oil pressure is below normal for this RPM and oil temperature is rising together. That is the pattern of reduced oil flow, not a pressure-sensor fault, because two independent channels agree.\n\n**Probable cause:** A clogging oil filter (check the bypass indicator), a sticking pressure relief valve, or a restriction in the oil lines.\n\n**Recommended ground action:** Inspect the oil filter and relief valve, and take an oil sample for debris.\n\n**Time criticality:** High if oil pressure approaches its minimum. Bearings depend on it.",
     },
-    bearing_wear: {
-        id: "bearing_wear",
-        label: "Bearing Wear",
-        description: "Vibration rises gradually well before any thermal or pressure channel moves — the slowest-developing fault in the taxonomy.",
-        fallbackAdvisory: "**Observation:** RMS vibration has been climbing gradually over several minutes, with oil pressure and temperature only beginning to shift.\n\n**Probable cause:** Main or rod bearing wear, or a developing imbalance in a rotating component.\n\n**Recommended ground action:** Schedule a borescope/vibration-spectrum inspection before further flight; don't dismiss a slow vibration trend as noise.\n\n**Time criticality:** Moderate now, escalating — bearing failures accelerate once wear begins.",
+    weak_cylinder: {
+        id: "weak_cylinder",
+        label: "Weak cylinder",
+        description: "One cylinder's combustion index is falling: its EGT drops against the other three, vibration rises and RPM droops slightly. The other cylinders are unaffected.",
+        fallbackAdvisory: "**Observation:** Cylinder {cyl}'s exhaust temperature has dropped relative to the other three, and vibration has risen. The twin attributes this to weak combustion in that one cylinder.\n\n**Probable cause:** A fouled or failing spark plug, an ignition lead fault on cylinder {cyl}, or an injector problem on that cylinder.\n\n**Recommended ground action:** Inspect the spark plugs and both ignition leads on cylinder {cyl}, then borescope the cylinder.\n\n**Time criticality:** Moderate, rising with vibration. A persistent misfire can cause secondary mechanical damage.",
     },
-    injector_fault_cyl3: {
-        id: "injector_fault_cyl3",
-        label: "Injector Fault (cylinder 3)",
-        description: "Cylinder 3's EGT rises (lean) — the opposite direction from an ignition fault — alongside irregular injection timing on that cylinder.",
-        fallbackAdvisory: "**Observation:** Cylinder 3's EGT is elevated relative to its peers while injection timing on that cylinder looks irregular — a lean-running injector, not a misfire.\n\n**Probable cause:** A partially clogged or sticking fuel injector on cylinder 3.\n\n**Recommended ground action:** Inspect and clean or replace the injector on cylinder 3.\n\n**Time criticality:** Moderate to high — a lean cylinder is a detonation risk under sustained high power.",
-    },
-    electrical_degradation: {
-        id: "electrical_degradation",
-        label: "Electrical / Charging Degradation",
-        description: "Alternator current drops or becomes erratic first, followed by a slow bus voltage decline as the battery discharges. Touches no other subsystem.",
-        fallbackAdvisory: "**Observation:** Alternator output current is low or erratic and bus voltage is trending down — the engine's mechanical health is otherwise unaffected.\n\n**Probable cause:** A failing alternator/regulator, a worn drive belt, or a degraded battery.\n\n**Recommended ground action:** Load-test the battery and check alternator output and belt condition before the next sortie.\n\n**Time criticality:** Moderate — the FADEC and avionics depend on this bus; don't defer past the next flight if voltage keeps declining.",
-    },
-    sensor_freeze_coolant: {
-        id: "sensor_freeze_coolant",
-        label: "Sensor Freeze (coolant)",
-        description: "The coolant temperature reading is frozen at whatever value it held at fault onset, independent of what the engine is actually doing — the engine may be entirely healthy underneath.",
-        fallbackAdvisory: "**Observation:** Coolant temperature has stopped tracking flight condition — it's holding a fixed value no matter what throttle or altitude does. This looks like an instrumentation fault, not an engine fault.\n\n**Probable cause:** A failed coolant temperature sensor, damaged wiring harness, or a loose connector on that channel.\n\n**Recommended ground action:** Inspect the wiring and connector for the coolant temperature sensor before trusting its readings.\n\n**Time criticality:** Low for the engine itself, moderate for situational awareness — a frozen coolant reading can mask a real overheat developing underneath it.",
-    },
-    sensor_drift_oilpress: {
-        id: "sensor_drift_oilpress",
-        label: "Sensor Drift (oil pressure)",
-        description: "The oil pressure reading drifts steadily downward independent of engine state — a calibration/wiring fault on that one channel, not an actual lubrication problem.",
-        fallbackAdvisory: "**Observation:** Oil pressure is trending down at a steady rate that doesn't match any other lubrication-subsystem channel — oil temperature and vibration are not corroborating an actual lubrication fault.\n\n**Probable cause:** A drifting oil pressure sensor, a degraded connector, or a calibration fault on that channel.\n\n**Recommended ground action:** Cross-check with a ground test-stand gauge before trusting the in-flight reading; inspect the sensor and its wiring.\n\n**Time criticality:** Low for the engine itself, moderate for situational awareness — don't let a drifting sensor mask a real oil-pressure drop, or cause an unnecessary abort.",
+    sensor_fault: {
+        id: "sensor_fault",
+        label: "Sensor fault",
+        description: "One channel disagrees with what the physics predicts from every other channel, and no change in engine health explains it. The engine itself is judged healthy; the reading is not trusted.",
+        fallbackAdvisory: "**Observation:** {channel} is reading {mode} in a way no change in engine health can explain. Every other channel agrees with a healthy engine. The twin has stopped trusting this sensor and raises no engine alarm from it.\n\n**Probable cause:** A failing probe or transducer, a damaged harness, or a loose connector on {channel}.\n\n**Recommended ground action:** Inspect the {channel} harness and connector, swap the probe, and re-check it against the twin's prediction.\n\n**Time criticality:** Low for the engine, moderate for situational awareness. While this channel is distrusted, a real problem on it would only be visible through the channels it couples to.",
     },
 };
-function getKbEntry(faultId) {
-    return exports.KNOWLEDGE_BASE[faultId] ?? exports.KNOWLEDGE_BASE.healthy;
+const CHANNEL_NAMES = {
+    egt_1: "EGT 1", egt_2: "EGT 2", egt_3: "EGT 3", egt_4: "EGT 4",
+    coolant_temp_c: "coolant temperature", oil_temp_c: "oil temperature", oil_press_bar: "oil pressure",
+    map_kpa: "manifold pressure", fuel_flow_lph: "fuel flow", rpm: "RPM", vib_rms_g: "vibration",
+};
+function fill(entry, ctx) {
+    const sub = (s) => s
+        .replaceAll("{cyl}", String(ctx.cylinder ?? "?"))
+        .replaceAll("{channel}", CHANNEL_NAMES[ctx.channel ?? ""] ?? ctx.channel ?? "the affected sensor")
+        .replaceAll("{mode}", ctx.mode === "frozen" ? "frozen" : ctx.mode ? `with a ${ctx.mode}` : "wrongly");
+    return { ...entry, label: sub(entry.label), description: sub(entry.description), fallbackAdvisory: sub(entry.fallbackAdvisory) };
+}
+function getKbEntry(label, ctx = {}) {
+    const cyl = /^weak_cylinder_cyl(\d)$/.exec(label);
+    if (cyl)
+        return fill(KNOWLEDGE_BASE.weak_cylinder, { ...ctx, cylinder: Number(cyl[1]) });
+    // A compound label from the stub ("a+b") is advised on its first member.
+    const key = label.split("+")[0];
+    const entry = KNOWLEDGE_BASE[key] ?? (key.startsWith("sensor_") ? KNOWLEDGE_BASE.sensor_fault : KNOWLEDGE_BASE.healthy);
+    return fill(entry, ctx);
 }
 //# sourceMappingURL=kb.js.map

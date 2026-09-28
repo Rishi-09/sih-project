@@ -149,6 +149,21 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
     return `${m}:${s < 10 ? "0" : ""}${s}`;
   };
 
+  const [injectNotice, setInjectNotice] = useState<string | null>(null);
+
+  const handleInject = async () => {
+    const faultLabel = LABEL[faultId] ?? faultId;
+    await run(() => onInjectFault(faultId, severity, perCylinder ? cylinder : undefined));
+    setInjectNotice(`✓ Injected: ${faultLabel} (${Math.round(severity * 100)}%)`);
+    setTimeout(() => setInjectNotice(null), 4000);
+  };
+
+  const handleClearAll = async () => {
+    await run(onClearFaults);
+    setInjectNotice("✓ Cleared all active simulated faults");
+    setTimeout(() => setInjectNotice(null), 3000);
+  };
+
   if (!runId) {
     return (
       <div className="controls">
@@ -160,6 +175,7 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
 
           {/* Point 8: Instantaneous visual feedback button */}
           <button
+            id="btn-start-sortie"
             className="btn btn-primary"
             onClick={handleStartSortie}
             disabled={busy}
@@ -250,7 +266,7 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
   return (
     <div className="controls">
       <div className="control-bar">
-        <div className="control-group-fault">
+        <div id="fault-selector-cluster" className="control-group-fault">
           <select value={faultType} onChange={(e) => setFaultType(e.target.value)}>
             <optgroup label="Engine faults (health factor degrades)">
               {ENGINE_MENU.map((f) => (
@@ -294,10 +310,19 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
             <span className="mono">{Math.round(severity * 100)}%</span>
           </div>
           <div className="fault-btn-group">
-            <button className="btn" onClick={() => run(() => onInjectFault(faultId, severity))} disabled={busy}>
-              {alreadyActive ? "Update severity" : "Inject fault"}
+            <button
+              id="btn-inject-fault"
+              className="btn"
+              onClick={handleInject}
+              disabled={busy}
+              style={{
+                background: alreadyActive ? "#d97706" : undefined,
+                color: alreadyActive ? "#fff" : undefined,
+              }}
+            >
+              {alreadyActive ? "Update severity" : "⚡ Inject fault"}
             </button>
-            <button className="btn" onClick={() => run(onClearFaults)} disabled={busy || injected.length === 0}>
+            <button className="btn" onClick={handleClearAll} disabled={busy || injected.length === 0}>
               Clear all
             </button>
           </div>
@@ -333,11 +358,32 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
             )}
           </div>
 
-          <button className="btn btn-danger-action" onClick={() => run(onStop)} disabled={busy}>
+          <button id="btn-stop-sortie" className="btn btn-danger-action" onClick={() => run(onStop)} disabled={busy}>
             Stop sortie
           </button>
         </div>
       </div>
+
+      {injectNotice && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: "6px 12px",
+            background: "rgba(16, 185, 129, 0.15)",
+            border: "1px solid rgba(16, 185, 129, 0.4)",
+            borderRadius: "6px",
+            fontSize: "12px",
+            color: "#34d399",
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <span>✦</span>
+          <span>{injectNotice}</span>
+        </div>
+      )}
 
       <div className="injected-row">
         <span className="injected-cap">Active faults</span>
@@ -345,8 +391,22 @@ export function ControlBar({ runId, injected, onStart, onStop, onInjectFault, on
           <span className="hint">None (nominal)</span>
         ) : (
           injected.map((f) => (
-            <span className="injected-chip" key={f}>
-              {LABEL[f] ?? f.replace(/_/g, " ")}
+            <span
+              className="injected-chip"
+              key={f}
+              style={{
+                background: "rgba(239, 68, 68, 0.2)",
+                border: "1px solid rgba(239, 68, 68, 0.4)",
+                color: "#fca5a5",
+                fontWeight: 700,
+                padding: "3px 8px",
+                borderRadius: "4px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <span>⚡ {LABEL[f] ?? f.replace(/_/g, " ")}</span>
             </span>
           ))
         )}
