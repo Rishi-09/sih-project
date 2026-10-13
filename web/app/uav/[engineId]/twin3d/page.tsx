@@ -41,7 +41,7 @@ export default function Twin3DPage() {
       .engines()
       .then((engines) => {
         if (cancelled) return;
-        const e = engines.find((x) => x.id === engineId) ?? null;
+        const e = engines.find((x) => x.id === engineId || x.tail.toLowerCase() === engineId.toLowerCase()) ?? null;
         setEngine(e);
         if (e?.latestRunStatus === "live" || e?.latestRunStatus === "degraded") { setRunId(e.latestRunId); }
       })

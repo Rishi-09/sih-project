@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.stopClock = stopClock;
 exports.createRunsRouter = createRunsRouter;
 const express_1 = require("express");
 const client_1 = require("../db/client");
@@ -8,6 +9,10 @@ const contract_1 = require("../twin/contract");
 const clock_1 = require("../twin/clock");
 const client_2 = require("../ai/client");
 const clocks = new Map();
+function stopClock(runId) {
+    clocks.get(runId)?.stop();
+    clocks.delete(runId);
+}
 /** Telemetry flows over the socket; control goes over REST — see published
  * plan §B5 for why (curl-debuggable, auditable in logs, easy to reason about
  * at 2am when the fault button does nothing). */

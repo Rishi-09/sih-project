@@ -1,9 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.enginesRouter = void 0;
+const runs_1 = require("./runs");
+const runManager_1 = require("../twin/runManager");
 const express_1 = require("express");
 const client_1 = require("../db/client");
-const runManager_1 = require("../twin/runManager");
+const runManager_2 = require("../twin/runManager");
 exports.enginesRouter = (0, express_1.Router)();
 const DEFAULT_MODEL = "Rotax 915 iS, 4-cyl boxer, turbo, FADEC";
 exports.enginesRouter.get("/", async (_req, res) => {
@@ -22,7 +24,7 @@ exports.enginesRouter.get("/", async (_req, res) => {
         }
         const out = engines.map((e) => {
             const latestRun = e.runs[0];
-            const latestFrame = latestRun ? (0, runManager_1.getLatestFrame)(latestRun.id) : undefined;
+            const latestFrame = latestRun ? (0, runManager_2.getLatestFrame)(latestRun.id) : undefined;
             return {
                 id: e.id,
                 tail: e.tail,
@@ -80,17 +82,32 @@ exports.enginesRouter.post("/", async (req, res) => {
 exports.enginesRouter.delete("/:id", async (req, res) => {
     try {
         const engineId = req.params.id;
-        // Delete associated frames, alerts, reports, messages and runs
         const runs = await client_1.prisma.run.findMany({ where: { engineId }, select: { id: true } });
         const runIds = runs.map((r) => r.id);
-        if (runIds.length > 0) {
-            await client_1.prisma.frame.deleteMany({ where: { runId: { in: runIds } } });
-            await client_1.prisma.alert.deleteMany({ where: { runId: { in: runIds } } });
-            await client_1.prisma.report.deleteMany({ where: { runId: { in: runIds } } });
-            await client_1.prisma.chatMessage.deleteMany({ where: { runId: { in: runIds } } });
-            await client_1.prisma.run.deleteMany({ where: { engineId } });
+        // 1. Halt all in-memory run clocks and socket emitters
+        for (const runId of runIds) {
+            (0, runs_1.stopClock)(runId);
+            try {
+                await (0, runManager_1.stopRun)(runId);
+            }
+            catch {
+                /* already stopped */
+            }
         }
-        await client_1.prisma.engine.delete({ where: { id: engineId } });
+        // 2. Cascade delete dependent records atomically
+        if (runIds.length > 0) {
+            await client_1.prisma.$transaction([
+                client_1.prisma.frame.deleteMany({ where: { runId: { in: runIds } } }),
+                client_1.prisma.alert.deleteMany({ where: { runId: { in: runIds } } }),
+                client_1.prisma.report.deleteMany({ where: { runId: { in: runIds } } }),
+                client_1.prisma.chatMessage.deleteMany({ where: { runId: { in: runIds } } }),
+                client_1.prisma.run.deleteMany({ where: { engineId } }),
+                client_1.prisma.engine.delete({ where: { id: engineId } }),
+            ]);
+        }
+        else {
+            await client_1.prisma.engine.delete({ where: { id: engineId } });
+        }
         res.json({ ok: true });
     }
     catch (err) {

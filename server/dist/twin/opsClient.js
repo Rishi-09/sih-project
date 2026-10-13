@@ -10,12 +10,20 @@ const types_1 = require("../types");
 const contract_1 = require("./contract");
 const reliability_1 = require("./reliability");
 /**
- * WebSocket CLIENT for Retribution's server_ops (retribution/run_ws_only.py,
- * ws://localhost:8766 by default) — the real physics simulator + real,
- * today-retrained ML pipeline, replacing the TwinRun stub for live runs.
- * Node no longer computes physics or diagnosis itself for this path; it
- * relays server_ops's frames into our TickFrame contract, then everything
- * downstream (persistence, alerts, AI advisory, broadcast) is unchanged.
+ * WebSocket CLIENT for Retribution's server_ops (retribution/run_ws_only.py)
+ * — the real physics simulator + real, today-retrained ML pipeline,
+ * replacing the TwinRun stub for live runs. Node no longer computes physics
+ * or diagnosis itself for this path; it relays server_ops's frames into our
+ * TickFrame contract, then everything downstream (persistence, alerts, AI
+ * advisory, broadcast) is unchanged.
+ *
+ * No hardcoded remote default on purpose: if OPS_WS_URL isn't set, this falls
+ * back to localhost so a machine without that env var (a fresh clone, a CI
+ * box, a contributor who hasn't set up Railway) fails to connect fast and
+ * cleanly rather than silently dialing someone else's deployed simulator.
+ * runManager.ts's connect() try/catch then routes the run to the stub twin.
+ * Set OPS_WS_URL to the deployed instance (e.g. the Railway wss:// domain)
+ * to use the real backend.
  *
  * Two real translation decisions, not oversights:
  * 1. server_ops streams telemetry at 20Hz; we downsample to ~1Hz here to
