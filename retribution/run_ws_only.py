@@ -31,7 +31,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Retribution Engine Ops — WebSocket-only launcher")
     parser.add_argument("--ws-port", type=int, default=int(os.environ.get("PORT", OPS_WS_PORT)))
     parser.add_argument("--speed", type=float, default=DEFAULT_SPEED_MULTIPLIER)
-    parser.add_argument("--no-ml", action="store_true", help="Disable ML pipeline")
+    parser.add_argument("--no-ml", action="store_true", help="Run the simulator without the live physics twin")
     return parser.parse_args()
 
 

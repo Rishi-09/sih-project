@@ -109,9 +109,8 @@ class TwinRun {
      */
     injectFault(req) {
         const onsetAt = this.t + (req.onsetDelay ?? 0);
-        // Sensor faults (contract/faults.json's sensorFaults) each target exactly
-        // one fixed channel/mode — Retribution doesn't randomize this, so neither
-        // do we.
+        // Sensor faults (contract/faults.json's sensorFaults, generated from
+        // twin2/catalog.py) each target exactly one fixed channel/mode.
         const sensorFault = contract_1.SENSOR_FAULT_BY_ID.get(req.type);
         if (sensorFault) {
             this.sensorFaults = this.sensorFaults.filter((f) => f.faultId !== sensorFault.id);
@@ -124,9 +123,8 @@ class TwinRun {
             });
             return;
         }
-        // ignition_fault_cyl3 / injector_fault_cyl3 are hardcoded to cylinder 3 in
-        // Retribution's simulator today (SIMULATOR_CONTEXT.md §14) — the fault
-        // class's own `cylinder` field is authoritative, not a client-supplied one.
+        // weak_cylinder_cylN carries its cylinder in the catalog entry — the class's
+        // own `cylinder` field is authoritative, not a client-supplied one.
         const faultClass = contract_1.FAULT_CLASS_BY_ID.get(req.type);
         // An id matching neither table used to be accepted and then do nothing,
         // which is indistinguishable from "the inject button is broken".
@@ -228,6 +226,8 @@ class TwinRun {
             mission: reliability_1.PENDING_MISSION,
             alerts: [], // filled in by AlertEngine in runManager, kept out of this class deliberately
             injectedFaults: this.injectedFaults(),
+            // The stub replays catalog cascades; it has no physics twin to report.
+            twin: null,
         };
     }
     // ---- internals -----------------------------------------------------
@@ -368,12 +368,26 @@ class TwinRun {
                 out = sf.frozenValue;
                 continue;
             }
-            // drift — exact linear rate from this sensor fault's contract/faults.json entry
-            const spec = contract_1.SENSOR_FAULT_BY_ID.get(sf.faultId);
-            if (!spec || spec.delta === undefined || spec.rampSec === undefined)
+            if (sf.mode === "dropout") {
+                if (this.rng() < 0.25)
+                    out = 0;
                 continue;
+            }
+            const spec = contract_1.SENSOR_FAULT_BY_ID.get(sf.faultId);
+            if (!spec || spec.delta === undefined)
+                continue;
+            if (sf.mode === "spike") {
+                if (this.rng() < 0.05)
+                    out += spec.delta;
+                continue;
+            }
+            if (sf.mode === "bias") {
+                out += spec.delta;
+                continue;
+            }
+            // drift — linear ramp to `delta` over rampSec, from the catalog entry
             const elapsed = this.t - sf.onsetAt;
-            out += Math.min(1, elapsed / spec.rampSec) * spec.delta;
+            out += Math.min(1, elapsed / (spec.rampSec ?? 1)) * spec.delta;
         }
         return out;
     }

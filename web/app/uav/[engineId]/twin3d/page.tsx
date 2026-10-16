@@ -12,10 +12,11 @@ import { MLPredictionPanel } from "@/components/twin3d/MLPredictionPanel";
 import { LogPanel } from "@/components/twin3d/LogPanel";
 import { Twin3DLayout } from "@/components/twin3d/Twin3DLayout";
 import { ControlBar } from "@/components/ControlBar";
+import { SortieModalPopup } from "@/components/SortieModalPopup";
+import { FaultInjectorDrawer } from "@/components/FaultInjectorDrawer";
 import "./twin3d.css";
 
 function ehiClass(ehi: number | null | undefined): string {
-  // null/undefined = not yet assessed. Neutral, deliberately not green.
   if (ehi === null || ehi === undefined) return "unknown";
   if (ehi < 50) return "crit";
   if (ehi < 80) return "warn";
@@ -29,11 +30,10 @@ export default function Twin3DPage() {
   const [engine, setEngine] = useState<EngineSummary | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [loadingEngine, setLoadingEngine] = useState(true);
-  // The fault controls get their own strip below the header rather than being
-  // squeezed into it. The header is a fixed-height, non-wrapping flex row, so
-  // anything taller than one line was being clipped behind the workspace —
-  // which is what hid the active-fault chips entirely.
-  const [showFaultBar, setShowFaultBar] = useState(true);
+  const [showFaultBar, setShowFaultBar] = useState(false);
+  const [showFaultDrawer, setShowFaultDrawer] = useState(false);
+  const [showSortieModal, setShowSortieModal] = useState(false);
+  const [hasPromptedModal, setHasPromptedModal] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,20 +43,29 @@ export default function Twin3DPage() {
         if (cancelled) return;
         const e = engines.find((x) => x.id === engineId || x.tail.toLowerCase() === engineId.toLowerCase()) ?? null;
         setEngine(e);
-        if (e?.latestRunStatus === "live" || e?.latestRunStatus === "degraded") { setRunId(e.latestRunId); }
+        if (e?.latestRunStatus === "live" || e?.latestRunStatus === "degraded") {
+          setRunId(e.latestRunId);
+        } else {
+          // Point 4: Prompt modal if sortie is not running
+          if (!hasPromptedModal) {
+            setShowSortieModal(true);
+            setHasPromptedModal(true);
+          }
+        }
       })
       .finally(() => !cancelled && setLoadingEngine(false));
 
     return () => {
       cancelled = true;
     };
-  }, [engineId]);
+  }, [engineId, hasPromptedModal]);
 
   const twin = useTwinSocket(runId);
 
   async function handleStart(scenario: string) {
     const { runId: newRunId } = await api.startRun(engineId, scenario);
     setRunId(newRunId);
+    setShowSortieModal(false);
   }
 
   async function handleStop() {
@@ -71,7 +80,10 @@ export default function Twin3DPage() {
   }
 
   async function handleInjectFault(type: string, severity: number, cylinder?: number) {
-    if (!runId) return;
+    if (!runId) {
+      alert("Please start a sortie first before injecting faults into the live flight simulator.");
+      return;
+    }
     await api.injectFault(runId, type, severity, 0, cylinder);
   }
 
@@ -79,7 +91,7 @@ export default function Twin3DPage() {
     return (
       <main className="twin3d-page">
         <div style={{ padding: 40, textAlign: "center", color: "var(--ink-3)" }}>
-          Loading 3D Twin…
+          Loading 3D Twin Workspace…
         </div>
       </main>
     );
@@ -89,8 +101,8 @@ export default function Twin3DPage() {
     return (
       <main className="twin3d-page">
         <div style={{ padding: 40, textAlign: "center" }}>
-          <Link href="/" className="btn">
-            ← Fleet
+          <Link href="/fleet" className="btn-back-action">
+            ← Back to Fleet
           </Link>
           <p style={{ marginTop: 20, color: "var(--ink-3)" }}>
             Engine not found. Verify backend status.
@@ -105,63 +117,64 @@ export default function Twin3DPage() {
   return (
     <div className="twin3d-page">
       {/* Top IDE Bar */}
-            <header className="twin3d-topbar">
-        <Link href="/" className="drdo-topbar-link" title="Return to DRDO Fleet Command">
-          <img src="/drdo-logo.png" alt="DRDO Emblem" className="drdo-topbar-img" />
+      <header className="twin3d-topbar">
+        <Link href={`/uav/${engineId}`} className="btn-secondary" style={{ height: 28, padding: "0 12px", fontSize: 12 }}>
+          2D console
         </Link>
-        <Link href="/" className="back-btn" title="Back to Fleet Overview">
-          ← Fleet
-        </Link>
-        <Link href={`/uav/${engineId}`} className="back-btn" title="Open 2D Telemetry Console">
-          Console
-        </Link>
+
         <div className="topbar-tail">
           <span>{engine.tail}</span>
           <span className="topbar-engine-model">Rotax 915 iS Turbo</span>
         </div>
 
-        {twin.latest && (
-          <div className="phase-pill" style={{ marginLeft: 8 }}>
-            {twin.latest.phase}
-          </div>
-        )}
-
         <div className="topbar-spacer" />
 
-        {/* Fault state stays visible in the header even with the strip closed */}
-        {/* Status pill showing either Nominal or Active Faults */}
-        <div className={`status-pill ${injected.length > 0 ? "status-pill-fault" : "status-pill-nominal"}`}>
+        {/* One status readout: connection state and fault count in the same pill,
+            rather than a phase pill, a status pill and a conn badge saying
+            overlapping things. */}
+        <div className={`status-pill ${injected.length > 0 ? "status-pill-fault" : runId ? "status-pill-nominal" : "status-pill-idle"}`}>
           <span className="status-pill-dot" />
-          <span>{injected.length > 0 ? `${injected.length} Active Fault${injected.length > 1 ? "s" : ""}` : "System Nominal"}</span>
+          <span>
+            {injected.length > 0
+              ? `${injected.length} active fault${injected.length > 1 ? "s" : ""}`
+              : runId
+                ? twin.status === "live"
+                  ? "Nominal · live"
+                  : `Nominal · ${twin.status}`
+                : "No sortie"}
+          </span>
         </div>
+
+        {runId ? (
+          <button type="button" className="btn-secondary" style={{ height: 28, fontSize: 12 }} onClick={() => setShowFaultDrawer(true)}>
+            Inject fault
+            {injected.length > 0 && <span className="fault-count">{injected.length}</span>}
+          </button>
+        ) : (
+          <button type="button" className="btn-primary" style={{ height: 28, fontSize: 12 }} onClick={() => handleStart("S1")}>
+            Launch sortie
+          </button>
+        )}
 
         <button
           type="button"
           className="btn-scenario-toggle"
           onClick={() => setShowFaultBar((v) => !v)}
           aria-expanded={showFaultBar}
-          title="Toggle sortie mission profile and fault injection controls"
+          title="Toggle the scenario simulator bar"
         >
-          <span>⚡ Mission Controls</span>
+          <span>Sortie controls</span>
           <span className="faultbar-caret">{showFaultBar ? "▴" : "▾"}</span>
         </button>
 
-        {runId && (
-          <span className={`conn-status conn-${twin.status}`} style={{ marginLeft: 8 }}>
-            {twin.status}
-          </span>
-        )}
-
         {twin.latest && (
-          <div className={`ehi-ring ${ehiClass(twin.latest.health.ehi)}`} style={{ width: 36, height: 36, fontSize: 12, marginLeft: 8 }}>
+          <div className={`ehi-ring ${ehiClass(twin.latest.health.ehi)}`} style={{ width: 32, height: 32, fontSize: 11.5 }}>
             {twin.latest.health.ehi === null ? "—" : Math.round(twin.latest.health.ehi)}
           </div>
         )}
       </header>
 
-      {/* Fault / scenario strip — its own row in the page's flex column, so it
-          takes real height and pushes the workspace down instead of overflowing
-          the fixed-height header. */}
+      {/* Fault / scenario strip */}
       {showFaultBar && (
         <div className="twin3d-faultbar">
           <ControlBar
@@ -175,12 +188,32 @@ export default function Twin3DPage() {
         </div>
       )}
 
-      {/* Main 4-Panel IDE View */}
+      {/* Main 4-Panel IDE View with Resizable Split Columns (Point 9) */}
       <Twin3DLayout
         leftPanel={<SimulatorPanel frame={twin.latest} />}
         centerCanvas={<Twin3DCanvas frame={twin.latest} isFlightActive={Boolean(runId)} />}
         rightPanel={<MLPredictionPanel frame={twin.latest} />}
         bottomLog={<LogPanel frame={twin.latest} />}
+      />
+
+      {/* Point 4: No Sortie Warning Popup */}
+      <SortieModalPopup
+        isOpen={showSortieModal && !runId}
+        engineTail={engine.tail}
+        engineId={engineId}
+        onStartSortie={() => handleStart("S1")}
+        onDismiss={() => setShowSortieModal(false)}
+      />
+
+      {/* Point 10: Fault Injector Drawer */}
+      <FaultInjectorDrawer
+        isOpen={showFaultDrawer}
+        onClose={() => setShowFaultDrawer(false)}
+        injectedFaults={injected}
+        onInject={async (type, sev) => {
+          await handleInjectFault(type, sev);
+        }}
+        onClear={handleClearFaults}
       />
     </div>
   );

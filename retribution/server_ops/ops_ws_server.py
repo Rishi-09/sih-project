@@ -9,7 +9,6 @@ import math
 import time
 from typing import Any, Dict
 import websockets
-from websockets.server import WebSocketServerProtocol
 
 from .config import BIOMES, MAX_INPUT_RATE_HZ, SERVICE_CEILING_M
 from .ops_loop import OpsSimulationManager
@@ -94,7 +93,7 @@ class OpsWSServer:
             counter["count"] += 1
             return counter["count"] <= MAX_INPUT_RATE_HZ
 
-    async def handle_connection(self, websocket: WebSocketServerProtocol):
+    async def handle_connection(self, websocket: Any):  # websockets' connection class moves between versions
         """Handle client lifecycle, initial state sync, and message dispatching."""
         self.sim.register_client(websocket)
         

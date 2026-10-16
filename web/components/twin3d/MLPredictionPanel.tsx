@@ -1,6 +1,7 @@
 "use client";
 
 import { TickFrame } from "@/lib/types";
+import { PhysicsTwinPanel } from "@/components/PhysicsTwinPanel";
 
 interface Props {
   frame: TickFrame | null;
@@ -9,7 +10,7 @@ interface Props {
 function fmtSec(s: number | null): string {
   if (s === null) return "—";
   const m = Math.floor(s / 60);
-  const r = s % 60;
+  const r = Math.round(s % 60);
   return `${m}m ${r}s`;
 }
 
@@ -76,7 +77,7 @@ export function MLPredictionPanel({ frame }: Props) {
   return (
     <div className="panel-inner ml-panel-scroll">
       <div className="panel-header-badge">
-        <span className="badge-title">AI Diagnostics</span>
+        <span className="badge-title">Physics twin</span>
         <span className={`badge-status ${isHealthy ? "status-ok" : "status-fault"}`}>
           {isLive ? (isHealthy ? "Nominal (Live)" : "Fault Detected") : "Pre-Flight Standby"}
         </span>
@@ -85,7 +86,7 @@ export function MLPredictionPanel({ frame }: Props) {
       {/* Primary Diagnosis & Confidence */}
       <div className="section-block">
         <div className="section-title">
-          Health State {!isLive && <span style={{ opacity: 0.6, fontSize: "10px" }}>(Baseline)</span>}
+          DIAGNOSIS {!isLive && <span style={{ opacity: 0.6, fontSize: "10px" }}>(Baseline)</span>}
         </div>
         <div className="diag-header-card">
           <div className="diag-main-title">
@@ -116,6 +117,12 @@ export function MLPredictionPanel({ frame }: Props) {
         </div>
       </div>
 
+      {/* The twin's evidence: sensor trust, worst health factors, causes with first checks */}
+      <div className="section-block">
+        <div className="section-title">PHYSICS EVIDENCE</div>
+        <PhysicsTwinPanel frame={frame} compact />
+      </div>
+
       {/* Subsystem Health Scores */}
       <div className="section-block">
         <div className="section-title">Subsystems (8)</div>
@@ -139,7 +146,7 @@ export function MLPredictionPanel({ frame }: Props) {
         <div className="section-title">Prognosis & Reliability</div>
         <div className="prognosis-box">
           <div className="prog-metric-row">
-            <span className="prog-k">Remaining Life</span>
+            <span className="prog-k">TIME TO REDLINE</span>
             <span className="prog-v highlight-text">{isLive ? fmtSec(prognosis.rulSec) : "> 1000 hrs"}</span>
           </div>
           <div className="prog-metric-row">

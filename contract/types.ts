@@ -7,7 +7,7 @@
  * regenerating anything that hardcodes the shape (stub twin, mock fixtures). See
  * the published plan, §B2, "the freeze ritual."
  */
-export const CONTRACT_VERSION = "1.1.0";
+export const CONTRACT_VERSION = "1.2.0";
 
 export interface FlightContext {
   alt_m: number;
@@ -42,16 +42,16 @@ export interface HealthBlock {
 
 export interface SensorFaultBlock {
   channel: string | null;
-  mode: "frozen" | "drift" | "dropout" | "spike" | null;
+  mode: "frozen" | "drift" | "bias" | "dropout" | "spike" | null;
   confidence: number;
 }
 
 export interface DiagnosisBlock {
-  label: string; // one of faults.json classes[].id
+  label: string; // a faults.json class id, "sensor_fault", "healthy" or "assessing"
   confidence: number;
   probs: Record<string, number>;
   anomalyScore: number;
-  cylinder: number | null; // only set for ignition_fault_cyl3 / injector_fault_cyl3 — always 3 today
+  cylinder: number | null; // set for weak_cylinder_cylN
   sensorFault: SensorFaultBlock;
 }
 
@@ -126,6 +126,54 @@ export interface AlertPayload {
   message: string;
 }
 
+/**
+ * The live physics twin's evidence (twin2/live.py), refreshed every ~5 simulated
+ * seconds. null while the twin is still assessing (first ~75 s airborne), during
+ * start/taxi, or on the stub fallback backend, which has no physics twin.
+ */
+export interface TwinFactor {
+  name: string; // ve | eta_turbo | comb_1..4 | oil_res | cool_eff
+  label: string;
+  value: number; // current estimate; `healthy` is where a sound engine sits
+  sd: number;
+  deficit: number; // 0 = healthy, 1 = at the failure threshold
+  healthy: number;
+  fail: number;
+}
+
+export interface TwinSensorFault {
+  channel: string;
+  mode: "bias" | "drift" | "frozen" | "dropout" | "spike";
+  confidence: number;
+  onset_s: number | null; // simulated seconds
+  evidence: string;
+}
+
+export interface TwinCause {
+  id: string; // a faults.json class id, or "sensor_fault"
+  label: string;
+  score: number; // share of the evidence weight, not a calibrated probability
+  evidence: string[];
+  check: string; // first maintenance check
+}
+
+export interface TwinBlock {
+  factors: TwinFactor[];
+  attribution: "none" | "engine" | "sensor" | "both";
+  sensorFaults: TwinSensorFault[];
+  causes: TwinCause[]; // top 3
+  noFault: number;
+  hypotheses: Record<string, number>; // "engine" / "sensor:<ch>" -> penalized cost, lowest wins
+  cylDev: (number | null)[]; // EGT split per cylinder, degC, net of the healthy model
+  timeToLimit: Record<string, number>; // seconds to redline at the current power, channels that get there
+  limitingChannel: string | null;
+  hotTakeoff: { channel: string; margin: number }; // steady-state margin at 100%, sea level, 40 degC (<0 = OK)
+  unexplained: number; // mean squared residual the chosen explanation leaves; ~1 is noise
+  windowS: number;
+  computeMs: number;
+  t: number; // simulated second the assessment covers up to
+}
+
 export interface TickFrame {
   contractVersion: string;
   runId: string;
@@ -146,6 +194,7 @@ export interface TickFrame {
    * the same situation and the two are meant to be compared. Always empty in
    * real operation; nothing injects faults into a real engine. */
   injectedFaults: string[];
+  twin: TwinBlock | null;
 }
 
 // 19 engine channels — the original count. The Rotax 915 iS has liquid-cooled

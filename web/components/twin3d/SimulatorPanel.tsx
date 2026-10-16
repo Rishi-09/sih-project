@@ -47,9 +47,9 @@ export function SimulatorPanel({ frame }: Props) {
         <span
           className="badge-freq"
           style={{
-            background: isLive ? "rgba(34, 197, 94, 0.15)" : "rgba(56, 189, 248, 0.15)",
-            color: isLive ? "#4ade80" : "#38bdf8",
-            border: `1px solid ${isLive ? "rgba(34, 197, 94, 0.4)" : "rgba(56, 189, 248, 0.35)"}`,
+            background: isLive ? "var(--ok-soft)" : "var(--accent-soft)",
+            color: isLive ? "var(--ok)" : "var(--accent)",
+            border: `1px solid ${isLive ? "rgba(47, 191, 136, 0.3)" : "var(--accent-border)"}`,
           }}
         >
           {isLive ? "20 Hz Live" : "Standby Baseline"}
@@ -59,7 +59,7 @@ export function SimulatorPanel({ frame }: Props) {
       {/* Flight Context */}
       <div className="section-block">
         <div className="section-title">
-          Flight State {!isLive && <span style={{ opacity: 0.6, fontSize: "10px" }}>(Ground Repos)</span>}
+          Flight State {!isLive && <span style={{ opacity: 0.6, fontSize: "10px" }}>(ground)</span>}
         </div>
         <div className="context-mini-grid">
           <div className="context-item">
@@ -84,7 +84,7 @@ export function SimulatorPanel({ frame }: Props) {
       {/* 19 Engine Sensors */}
       <div className="section-block">
         <div className="section-title">
-          Engine Sensors (19) {!isLive && <span style={{ opacity: 0.6, fontSize: "10px" }}>(Nominal Standby)</span>}
+          Engine Sensors (19) {!isLive && <span style={{ opacity: 0.6, fontSize: "10px" }}>(standby)</span>}
         </div>
         <div className="sensor-list-table">
           <div className="sensor-list-header">

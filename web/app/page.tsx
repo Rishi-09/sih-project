@@ -1,6 +1,6 @@
 import { EngineSummary } from "@/lib/types";
 import { API_BASE } from "@/lib/api";
-import { FleetManager } from "@/components/FleetManager";
+import { DashboardOverview } from "@/components/DashboardOverview";
 
 async function getEngines(): Promise<EngineSummary[]> {
   try {
@@ -8,15 +8,15 @@ async function getEngines(): Promise<EngineSummary[]> {
     if (!res.ok) return [];
     return res.json();
   } catch {
-    return []; // server not running yet — render empty state gracefully
+    return []; // server not running yet — render sample/empty state gracefully
   }
 }
 
-export default async function FleetPage() {
+export default async function HomePage() {
   const engines = await getEngines();
   return (
-    <main className="fleet">
-      <FleetManager initialEngines={engines} />
+    <main>
+      <DashboardOverview initialEngines={engines} />
     </main>
   );
 }

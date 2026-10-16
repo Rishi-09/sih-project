@@ -16,6 +16,7 @@ export function SensorGrid({ frame }: { frame: TickFrame | null }) {
       {ENGINE_CHANNELS.map((ch) => {
         const value = frame?.sensors[ch];
         const z = frame?.residualZ[ch];
+        const expected = frame?.nominal[ch];
         return (
           <div key={ch} className={`sensor-cell ${zClass(z)}`}>
             <div className="label">{ch.replace(/_/g, " ")}</div>
@@ -23,7 +24,12 @@ export function SensorGrid({ frame }: { frame: TickFrame | null }) {
               {value !== undefined ? value.toFixed(ch === "rpm" ? 0 : 2) : "—"}
               <span style={{ fontSize: 11, color: "var(--ink-3)", marginLeft: 4 }}>{CHANNEL_UNITS[ch]}</span>
             </div>
-            <div className="z">{z !== undefined ? `${z >= 0 ? "+" : ""}${z.toFixed(1)}σ` : "no data"}</div>
+            <div className="z">
+              {z !== undefined ? `${z >= 0 ? "+" : ""}${z.toFixed(1)}σ` : "no data"}
+              {expected !== undefined && (
+                <span className="z-expected"> · healthy {expected.toFixed(ch === "rpm" ? 0 : 1)}</span>
+              )}
+            </div>
           </div>
         );
       })}

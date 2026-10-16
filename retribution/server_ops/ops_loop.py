@@ -1,6 +1,7 @@
 """
-OpsSimulationLoop: 20 Hz Async Simulation Loop & Co-located ML Inference Engine for Engine Ops.
-Broadcasts telemetry at 20 Hz, runs ML every 5.0 simulated seconds, and maintains resilient server-side state.
+OpsSimulationLoop: 20 Hz async simulation loop with the live physics twin (twin2) co-located.
+Broadcasts telemetry at 20 Hz; every 5 simulated seconds the twin assesses the recent
+window on a worker thread and its result is broadcast as `ml_result`.
 """
 
 import asyncio
@@ -8,15 +9,14 @@ import json
 import logging
 from collections import deque
 from typing import Dict, Any, Set, Optional
-import pandas as pd
 
 from .config import (
-    INNER_TICK_HZ, DEFAULT_SPEED_MULTIPLIER, ML_WINDOW_SIZE,
+    INNER_TICK_HZ, DEFAULT_SPEED_MULTIPLIER,
     ML_INFERENCE_INTERVAL_SIM_S, MAX_TELEMETRY_BUFFER
 )
 from .ops_engine import OpsEngineSim
 from .ops_missions import MissionManager, MISSIONS
-from pure_engine_ml import EngineHealthPipeline
+from twin2.live import LiveTwin
 
 logger = logging.getLogger("OpsSimulationLoop")
 
@@ -28,7 +28,8 @@ class OpsSimulationManager:
     def __init__(self):
         self.engine = OpsEngineSim(seed=42)
         self.mission_mgr = MissionManager(self.engine)
-        self.ml_pipeline: Optional[EngineHealthPipeline] = None
+        self.ml_pipeline: Optional[LiveTwin] = None
+        self._ml_busy = False
         self.buffer = deque(maxlen=MAX_TELEMETRY_BUFFER)
         
         # Runtime flags
@@ -48,17 +49,9 @@ class OpsSimulationManager:
         self.last_ml_result: Optional[Dict[str, Any]] = None
 
     def initialize_ml(self):
-        """Pre-load ML pipeline in memory."""
-        try:
-            logger.info("Loading EngineHealthPipeline for Engine Ops...")
-            # "ops": normalise residuals against the OpsEngineSim calibration,
-            # not the runs_v3 one the twin was fitted on. See
-            # calibrate_ops_residuals.py for why that distinction matters here.
-            self.ml_pipeline = EngineHealthPipeline(residual_domain="ops")
-            logger.info("EngineHealthPipeline loaded successfully.")
-        except Exception as e:
-            logger.error(f"Failed to load ML pipeline: {e}. Running in telemetry-only mode.")
-            self.ml_pipeline = None
+        """Create the live physics twin. Nothing to load: the model is the physics."""
+        self.ml_pipeline = LiveTwin()
+        logger.info("Live physics twin (twin2: M1 trust, M2 health factors, M4, M5, M6) ready.")
 
     def start(self, speed: Optional[float] = None):
         """Start the 20 Hz simulation session."""
@@ -91,6 +84,8 @@ class OpsSimulationManager:
 
     def reset(self, seed: Optional[int] = 42):
         self.engine = OpsEngineSim(seed=seed)
+        if self.ml_pipeline is not None:
+            self.ml_pipeline = LiveTwin()  # new instance: an assessment still running for the old flight is dropped
         self.mission_mgr = MissionManager(self.engine)
         self.buffer.clear()
         self.last_telemetry = None
@@ -172,6 +167,18 @@ class OpsSimulationManager:
         for dead_ws in disconnected:
             self.active_subscribers.discard(dead_ws)
 
+    async def _assess(self, twin: LiveTwin, snap):
+        try:
+            ml_result = await asyncio.get_running_loop().run_in_executor(None, twin.assess, snap)
+            # Drop results from a twin replaced by reset() while this one was computing.
+            if ml_result is not None and twin is self.ml_pipeline:
+                self.last_ml_result = ml_result
+                await self._broadcast({"type": "ml_result", "data": ml_result})
+        except Exception as ml_err:
+            logger.error(f"Live twin assessment error: {ml_err}", exc_info=True)
+        finally:
+            self._ml_busy = False
+
     async def _run_loop(self):
         """Fixed 20 Hz inner loop with 2-minute idle auto-pause to conserve Railway credits."""
         import time
@@ -226,23 +233,16 @@ class OpsSimulationManager:
                                 "data": violation
                             })
 
-                    # 7. ML inference evaluated every 5.0 simulated seconds
+                    # 7. Live twin: feed every frame; assess every ML_INFERENCE_INTERVAL_SIM_S on a
+                    #    worker thread so the 20 Hz loop never stalls on a model fit.
                     sim_t = float(frame["t_s"])
-                    if self.ml_pipeline is not None and (sim_t - self.last_ml_sim_time) >= ML_INFERENCE_INTERVAL_SIM_S:
-                        self.last_ml_sim_time = sim_t
-                        if len(self.buffer) >= ML_WINDOW_SIZE:
-                            window_records = list(self.buffer)[-ML_WINDOW_SIZE:]
-                            df_window = pd.DataFrame(window_records)
-                            
-                            try:
-                                ml_result = self.ml_pipeline.predict(df_window)
-                                self.last_ml_result = ml_result
-                                await self._broadcast({
-                                    "type": "ml_result",
-                                    "data": ml_result
-                                })
-                            except Exception as ml_err:
-                                logger.error(f"ML evaluation error: {ml_err}")
+                    if self.ml_pipeline is not None:
+                        self.ml_pipeline.observe(frame)
+                        due = (sim_t - self.last_ml_sim_time) >= ML_INFERENCE_INTERVAL_SIM_S
+                        if due and not self._ml_busy:
+                            self.last_ml_sim_time = sim_t
+                            self._ml_busy = True
+                            asyncio.create_task(self._assess(self.ml_pipeline, self.ml_pipeline.snapshot()))
 
                 except Exception as loop_err:
                     logger.error(f"Error in sim tick: {loop_err}", exc_info=True)

@@ -10,7 +10,9 @@ import { MissionStatus } from "@/components/MissionStatus";
 import { LimiterList } from "@/components/LimiterList";
 import { WhatIfPlanner } from "@/components/WhatIfPlanner";
 import { DetailTabs } from "@/components/DetailTabs";
-import { QuickMetricsStrip } from "@/components/QuickMetricsStrip";
+import { ControlBar } from "@/components/ControlBar";
+import { MiniTwinPreview } from "@/components/MiniTwinPreview";
+import { StartupEngageConsole } from "@/components/StartupEngageConsole";
 
 export default function ConsolePage() {
   const params = useParams<{ engineId: string }>();
@@ -19,6 +21,8 @@ export default function ConsolePage() {
   const [engine, setEngine] = useState<EngineSummary | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [loadingEngine, setLoadingEngine] = useState(true);
+  const [bypassWarmup, setBypassWarmup] = useState(false);
+  const [bgExploreMode, setBgExploreMode] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,17 +78,37 @@ export default function ConsolePage() {
     setRunDead(false);
   }
 
+  async function handleInjectFault(type: string, severity: number, cylinder?: number) {
+    if (!runId) return;
+    await api.injectFault(runId, type, severity, 0, cylinder);
+  }
+
+  async function handleClearFaults() {
+    if (!runId) return;
+    await api.clearFaults(runId);
+  }
+
+  // Point 7: Instant skeleton loader instead of slow blank text
   if (loadingEngine) {
-    return <main className="console">Loading telemetry...</main>;
+    return (
+      <main className="console" style={{ padding: "28px" }}>
+        <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "20px" }}>
+          <div className="skeleton-box" style={{ width: "120px", height: "36px", borderRadius: "8px" }} />
+          <div className="skeleton-box" style={{ width: "200px", height: "36px", borderRadius: "8px" }} />
+        </div>
+        <div className="skeleton-box" style={{ width: "100%", height: "200px", borderRadius: "12px", marginBottom: "20px" }} />
+        <div className="skeleton-box" style={{ width: "100%", height: "320px", borderRadius: "12px" }} />
+      </main>
+    );
   }
 
   if (!engine) {
     return (
       <main className="console">
-        <Link href="/" className="back">
-          ← Fleet
+        <Link href="/fleet" className="btn-back-action">
+          ← Back to Fleet
         </Link>
-        <div className="empty-state">
+        <div className="empty-state" style={{ marginTop: "24px" }}>
           Engine not found. Is the backend seeded? (<code>npm run seed</code> in <code>server/</code>)
         </div>
       </main>
@@ -92,77 +116,234 @@ export default function ConsolePage() {
   }
 
   const frame = twin.latest;
+  const hasFault = Boolean(frame?.injectedFaults && frame.injectedFaults.length > 0);
+  const inWarmup = Boolean(frame && frame.t < 75 && !hasFault && !bypassWarmup);
 
   return (
     <main className="console">
       <header className="console-header">
-        <Link href="/" className="drdo-topbar-link" title="Return to DRDO Fleet Command">
-          <img src="/drdo-logo.png" alt="DRDO Emblem" className="drdo-topbar-img" />
+        <Link href="/fleet" className="btn-icon" aria-label="Back to fleet register">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m15 5-7 7 7 7" />
+          </svg>
         </Link>
-        <Link href="/" className="back">
-          ← Fleet
-        </Link>
-        <div className="tail">{engine.tail}</div>
-        {frame && <div className="phase-pill">{frame.phase}</div>}
-        <div className="spacer" />
+
+        <div className="console-ident">
+          <h1 className="console-tail">{engine.tail}</h1>
+          <span className="console-model">{engine.model.toUpperCase()}</span>
+        </div>
+
+        {frame && <span className="chip is-accent">{frame.phase.toUpperCase()}</span>}
+
+        <span className="spacer" />
 
         {frame && (
-          <div className="ehi-chip" title="Engine health index">
-            <span className="ehi-num">{frame.health.ehi === null ? "—" : `${Math.round(frame.health.ehi)}%`}</span>
-            <span className="ehi-cap">Health</span>
+          <div className="console-ehi" title="Engine health index — condition now">
+            <span
+              className={`console-ehi-num is-${
+                frame.health.ehi === null
+                  ? "unknown"
+                  : frame.health.ehi < 50
+                    ? "critical"
+                    : frame.health.ehi < 70
+                      ? "caution"
+                      : "ok"
+              }`}
+            >
+              {frame.health.ehi === null ? "—" : Math.round(frame.health.ehi)}
+            </span>
+            <span className="console-ehi-cap">EHI</span>
           </div>
         )}
-        {runId && <span className={`conn-status conn-${twin.status}`}>{twin.status}</span>}
+
         {runId && (
-          <button
-            type="button"
-            className="btn btn-danger-mini"
-            onClick={handleStop}
-            title="Terminate active sortie"
-          >
-            End Sortie
-          </button>
+          <span className={`chip ${twin.status === "live" ? "is-ok" : twin.status === "degraded" ? "is-critical" : ""}`}>
+            <span className="chip-dot" />
+            {twin.status.toUpperCase()}
+          </span>
         )}
-        <Link href={`/uav/${engineId}/twin3d`} className="btn btn-twin3d-nav" title="Switch to 3D Digital Twin View">
-          ⬢ 3D Digital Twin
+
+        <Link href={`/uav/${engineId}/twin3d`} className="btn-secondary">
+          3D twin
         </Link>
       </header>
 
-      {/* Real telemetry metrics bus */}
-      <QuickMetricsStrip frame={frame} tail={engine.tail} />
+      {/* Point 3: Default 3D Engine View embedded in Console Page! */}
+      <MiniTwinPreview engineId={engineId} frame={frame} />
 
       {!runId ? (
-        <div className="empty-state-card">
-          <div className="empty-state-title">Sortie Standby</div>
-          <div className="empty-state-sub">
-            No active flight sortie running for {engine.tail}. Launch telemetry to monitor live digital twin.
+        <>
+          <div className="panel">
+            <ControlBar
+              runId={runId}
+              injected={[]}
+              onStart={handleStart}
+              onStop={handleStop}
+              onInjectFault={handleInjectFault}
+              onClearFaults={handleClearFaults}
+            />
           </div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => handleStart("S1")}
-            style={{ marginTop: 14 }}
-          >
-            Launch Sortie (Cruise)
-          </button>
-        </div>
+          <div className="empty-state" style={{ marginTop: 14 }}>
+            No active sortie for {engine.tail}. Start one above to bring live physics and ML diagnostics online.
+          </div>
+        </>
       ) : !frame ? (
-        <div className="empty-state-card">
-          <div className="empty-state-title">
-            {runDead ? "Sortie Terminated" : "Connecting to Live Telemetry…"}
+        <>
+          <div className="panel">
+            <ControlBar
+              runId={runId}
+              injected={[]}
+              onStart={handleStart}
+              onStop={handleStop}
+              onInjectFault={handleInjectFault}
+              onClearFaults={handleClearFaults}
+            />
           </div>
-          <div className="empty-state-sub">
-            {runDead ? "This sortie is no longer active on the server." : "Awaiting telemetry stream at 20 Hz…"}
+
+          {/* Point 7: Interactive Telemetry Connection Card */}
+          <div
+            className="empty-state"
+            style={{
+              marginTop: 14,
+              padding: "24px",
+              background: "var(--surface)",
+              border: "1px solid var(--rule)",
+              borderRadius: "10px",
+              textAlign: "center",
+            }}
+          >
+            {runDead ? (
+              <>
+                <div style={{ color: "var(--critical)", fontWeight: 700, fontSize: "14px" }}>
+                  Sortie process is no longer active on the server.
+                </div>
+                <div style={{ fontSize: 12.5, marginTop: 8, color: "var(--ink-2)" }}>
+                  It was likely ended by a server restart. Stop it to clear the console, then start a new one.
+                </div>
+              </>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--accent)", fontWeight: 700, fontSize: "14px" }}>
+                  <span className="status-dot" />
+                  <span>Connecting to the live 1 Hz telemetry stream</span>
+                </div>
+                <div style={{ fontSize: "12px", color: "var(--ink-3)" }}>
+                  Simulator socket handshake in progress. Telemetry frame will appear in seconds.
+                </div>
+              </div>
+            )}
           </div>
-          {runDead && (
-            <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "center" }}>
-              <button type="button" className="btn" onClick={handleStop}>Clear Sortie</button>
-              <button type="button" className="btn btn-primary" onClick={() => handleStart("S1")}>Start New Sortie</button>
+        </>
+      ) : inWarmup ? (
+        <>
+          {!bgExploreMode ? (
+            <StartupEngageConsole
+              frame={frame}
+              engineId={engineId}
+              tail={engine.tail}
+              onExploreBackground={() => setBgExploreMode(true)}
+              onViewTelemetry={() => setBypassWarmup(true)}
+            />
+          ) : (
+            <div
+              style={{
+                background: "rgba(2, 132, 199, 0.15)",
+                border: "1px solid rgba(56, 189, 248, 0.4)",
+                borderRadius: "10px",
+                padding: "12px 18px",
+                marginBottom: "16px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 10,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="status-dot" style={{ background: "#38bdf8" }} />
+                <span style={{ fontSize: "13px", fontWeight: 700, color: "#38bdf8" }}>
+                  FADEC Spooling in Background (T+{Math.round(frame.t)}s / 75s)
+                </span>
+                <span style={{ fontSize: "12px", color: "#94a3b8" }}>
+                  Telemetry stream active. You are free to explore.
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  className="btn"
+                  onClick={() => setBgExploreMode(false)}
+                  style={{ fontSize: "11px", padding: "4px 10px" }}
+                >
+                  Expand Spooler View
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setBypassWarmup(true)}
+                  style={{ fontSize: "11px", padding: "4px 10px" }}
+                >
+                  Open Live Cockpit ⚡
+                </button>
+              </div>
             </div>
           )}
-        </div>
+
+          <div className="panel panel-controls" style={{ marginBottom: "16px" }}>
+            <ControlBar
+              runId={runId}
+              injected={frame.injectedFaults}
+              onStart={handleStart}
+              onStop={handleStop}
+              onInjectFault={handleInjectFault}
+              onClearFaults={handleClearFaults}
+            />
+          </div>
+        </>
       ) : (
         <div className="console-dashboard">
+          {hasFault && (
+            <div
+              style={{
+                gridColumn: "1 / -1",
+                background: "rgba(239, 68, 68, 0.15)",
+                border: "1px solid rgba(239, 68, 68, 0.4)",
+                borderRadius: "10px",
+                padding: "12px 18px",
+                marginBottom: "6px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 12,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: "16px" }}>⚠️</span>
+                <div>
+                  <div style={{ color: "#ef4444", fontWeight: 800, fontSize: "13px" }}>
+                    SIMULATED ANOMALY ACTIVE: {frame.injectedFaults.map(f => f.replace(/_/g, " ")).join(", ").toUpperCase()}
+                  </div>
+                  <div style={{ fontSize: "11.5px", color: "#fca5a5", marginTop: 2 }}>
+                    Physical engine degradation is being injected. AI limiter models and safe endurance are actively adjusting.
+                  </div>
+                </div>
+              </div>
+              <button
+                className="btn"
+                onClick={handleClearFaults}
+                style={{
+                  background: "#1e293b",
+                  border: "1px solid rgba(239,68,68,0.4)",
+                  color: "#fca5a5",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  padding: "5px 12px",
+                }}
+              >
+                Clear Injected Anomaly
+              </button>
+            </div>
+          )}
+
           <div className="console-col-left">
             <MissionStatus mission={frame.mission} />
 
@@ -182,6 +363,18 @@ export default function ConsolePage() {
 
           <div className="console-col-right">
             <DetailTabs frame={frame} runId={runId} />
+
+            {/* Scenario controls */}
+            <div className="panel panel-controls">
+              <ControlBar
+                runId={runId}
+                injected={frame.injectedFaults}
+                onStart={handleStart}
+                onStop={handleStop}
+                onInjectFault={handleInjectFault}
+                onClearFaults={handleClearFaults}
+              />
+            </div>
           </div>
         </div>
       )}

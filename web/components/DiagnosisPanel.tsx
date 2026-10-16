@@ -29,7 +29,8 @@ export function DiagnosisPanel({ frame }: { frame: TickFrame | null }) {
 
       {diagnosis.sensorFault.channel && (
         <div style={{ marginTop: 12, fontSize: 12.5, color: "var(--caution)" }}>
-          ⚠ {diagnosis.sensorFault.channel} looks {diagnosis.sensorFault.mode} — likely a sensor fault, not an engine fault.
+          ⚠ {diagnosis.sensorFault.channel} reads {diagnosis.sensorFault.mode}: the physics twin judges this a sensor
+          fault, not an engine fault, and has stopped trusting that channel.
         </div>
       )}
 

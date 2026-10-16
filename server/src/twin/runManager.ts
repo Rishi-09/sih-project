@@ -3,7 +3,7 @@ import { TwinRun } from "./stubTwin";
 import { OpsClient, opsMissionProfile } from "./opsClient";
 import { AlertEngine } from "./alerts";
 import { ReliabilityEngine } from "./reliability";
-import { StartRunRequest, FaultRequest, TickFrame } from "../types";
+import { StartRunRequest, FaultRequest, TickFrame, CONTRACT_VERSION } from "../types";
 
 type RunStatus = "live" | "degraded" | "stopped";
 type EngineBackend = TwinRun | OpsClient;
@@ -41,7 +41,7 @@ export async function startRun(req: StartRunRequest): Promise<{ runId: string }>
       engineId: req.engineId,
       scenario: req.scenario ?? "custom",
       seed,
-      contractVersion: "1.0.0",
+      contractVersion: CONTRACT_VERSION,
       missionProfile: JSON.stringify(req.missionProfile ?? {}),
       status: "live",
     },

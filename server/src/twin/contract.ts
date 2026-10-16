@@ -124,13 +124,11 @@ export function resolveLimits(spec: SensorSpec, _sensors?: Record<string, number
 }
 
 /**
- * /contract/faults.json is a transcription of ../Retribution/simulator/faults.py
- * (FaultManager._build_profiles) — Retribution ships the fault taxonomy only as
- * Python code, not a data file, so unlike sensors.json this one isn't a verbatim
- * copy. Every id/delaySec/rampSec/delta/shape here must match faults.py exactly.
- * stubTwin.ts drives its entire fault cascade off this data — no per-fault
- * switch statement — so a new or changed fault in faults.py only needs its
- * cascade transcribed here to take effect.
+ * /contract/faults.json is GENERATED from twin2/catalog.py (`python -m twin2.catalog`),
+ * the single definition of every injectable fault. The live simulator injects from
+ * that catalog directly; this server validates fault requests against it; and
+ * stubTwin.ts replays each engine fault's `cascade` (its effect at a reference
+ * cruise point, computed from the same physics) when the simulator is unreachable.
  */
 export interface FaultCascadeStep {
   channel: string;
@@ -143,14 +141,16 @@ export interface FaultClass {
   id: string;
   label: string;
   subsystems: string[];
+  factor?: string; // the twin2 health factor this engine fault degrades
   cylinder?: number;
   cascade?: FaultCascadeStep[];
 }
+export type SensorFaultMode = "frozen" | "drift" | "bias" | "dropout" | "spike";
 export interface SensorFaultSpec {
   id: string;
   label: string;
   channel: string;
-  mode: "frozen" | "drift";
+  mode: SensorFaultMode;
   delaySec?: number;
   rampSec?: number;
   delta?: number;

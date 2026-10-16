@@ -15,7 +15,7 @@ DEFAULT_SPEED_MULTIPLIER: float = 1.0  # 1.0x realtime
 MAX_INPUT_RATE_HZ: int = 120      # Packet rate limiting guard
 
 # ML Inference Configuration
-ML_WINDOW_SIZE: int = 60          # 60 rows minimum required
+# (live twin window sizes live in twin2/live.py)
 ML_INFERENCE_INTERVAL_SIM_S: float = 5.0  # Predict every 5 accumulated sim seconds
 MAX_TELEMETRY_BUFFER: int = 3600  # Cap buffer at 3600 frames
 

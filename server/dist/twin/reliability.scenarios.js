@@ -50,11 +50,11 @@ function run(label, fault) {
     }
 }
 run("HEALTHY (false-alarm check — must never escalate)", null);
-run("COOLING FAILURE sev 0.7 @ t=300", { type: "cooling_failure", severity: 0.7, at: 300 });
-run("LUBRICATION DEGRADATION sev 0.6 @ t=300", { type: "lubrication_degradation", severity: 0.6, at: 300 });
-run("BEARING WEAR sev 0.8 @ t=300", { type: "bearing_wear", severity: 0.8, at: 300 });
-run("SENSOR DRIFT oilpress (must NOT escalate — sensor, not engine)", {
-    type: "sensor_drift_oilpress",
+run("COOLANT RESTRICTION sev 0.7 @ t=300", { type: "coolant_restriction", severity: 0.7, at: 300 });
+run("OIL RESTRICTION sev 0.6 @ t=300", { type: "oil_restriction", severity: 0.6, at: 300 });
+run("WEAK CYLINDER 3 sev 0.8 @ t=300", { type: "weak_cylinder_cyl3", severity: 0.8, at: 300 });
+run("SENSOR BIAS oilpress (must NOT escalate — sensor, not engine)", {
+    type: "sensor_bias_oilpress",
     severity: 0.9,
     at: 300,
 });

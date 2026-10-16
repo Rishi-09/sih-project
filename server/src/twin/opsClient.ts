@@ -1,14 +1,14 @@
 import WebSocket from "ws";
 import {
   TickFrame, FlightContext, HealthBlock, DiagnosisBlock, PrognosisBlock,
-  FaultRequest, MissionProfile, ENGINE_CHANNELS, CONTRACT_VERSION,
+  FaultRequest, MissionProfile, ENGINE_CHANNELS, CONTRACT_VERSION, TwinBlock, TwinSensorFault,
 } from "../types";
-import { SENSOR_FAULT_BY_ID } from "./contract";
 import { PENDING_MISSION } from "./reliability";
 
 /**
  * WebSocket CLIENT for Retribution's server_ops (retribution/run_ws_only.py)
- * — the real physics simulator + real, today-retrained ML pipeline,
+ * — the live simulator + the live physics twin (twin2/live.py: M1 sensor trust,
+ * M2 health factors, M4 cylinder split, M5 time-to-limit, M6 root cause),
  * replacing the TwinRun stub for live runs. Node no longer computes physics
  * or diagnosis itself for this path; it relays server_ops's frames into our
  * TickFrame contract, then everything downstream (persistence, alerts, AI
@@ -87,7 +87,10 @@ const ASSESSING_LABEL = "assessing";
  * ops_context.py do the rest each tick, so this only needs to fire a handful
  * of times per flight, not every tick.
  */
-const CRUISE_ALT_M = 3000;
+// Lowered from 3000 to 1800 (and the schedule below compressed) so a demo sortie reaches
+// cruise, where faults are actually tested, in ~75s instead of ~130s. Ground roll and climb
+// are still fully modelled by the physics — only the SCRIPTED waiting between them was cut.
+const CRUISE_ALT_M = 1800;
 const CRUISE_POWER_PCT = 68;
 
 /**
@@ -111,14 +114,14 @@ interface AutopilotStep {
 
 const AUTOPILOT_SCHEDULE: AutopilotStep[] = [
   { atSimT: 0, input: { throttle: 20, gear: true, autopilot: false } },
-  { atSimT: 4, input: { throttle: 95 } }, // taxi -> takeoff roll (reduced from 8s to 4s)
-  { atSimT: 15, input: { throttle: 88, autopilot: true, ap_target_alt: CRUISE_ALT_M, gear: false } }, // climb out (reduced from 25s to 15s)
+  { atSimT: 3, input: { throttle: 95 } }, // taxi -> takeoff roll (reduced from 4s to 3s)
+  { atSimT: 6, input: { throttle: 88, autopilot: true, ap_target_alt: CRUISE_ALT_M, gear: false } }, // climb out (reduced from 15s to 6s — was 11s of scripted ground roll with nothing to test)
   {
     // Cruise power on level-off, not on the clock. The atSimT floor only stops
     // it firing during the initial ground roll; the altitude predicate is what
     // actually releases it, and the schedule cannot stall because a step is
     // skipped if the aircraft never gets there (see fireDueAutopilotSteps).
-    atSimT: 110,
+    atSimT: 20,
     when: ({ altM }) => altM >= CRUISE_ALT_M * 0.97,
     input: { throttle: CRUISE_POWER_PCT },
   },
@@ -143,7 +146,7 @@ const AUTOPILOT_SCHEDULE: AutopilotStep[] = [
  * the best available estimate before the climb has happened.
  */
 export function opsMissionProfile(): MissionProfile {
-  const NOMINAL_LEVEL_OFF_SIM_T = 300; // typical time to reach CRUISE_ALT_M
+  const NOMINAL_LEVEL_OFF_SIM_T = 75; // measured time to reach CRUISE_ALT_M (1800m) on the compressed schedule
   const marks = AUTOPILOT_SCHEDULE.map((step, i) => ({
     atSimT: step.when ? NOMINAL_LEVEL_OFF_SIM_T : step.atSimT,
     throttle: typeof step.input.throttle === "number" ? (step.input.throttle as number) : null,
@@ -172,15 +175,56 @@ interface OpsTelemetry {
   [key: string]: unknown; // 19 sensor channels + game-only fields (pitch_norm, biome_id, ...) we ignore
 }
 
+/** twin2/live.py's `twin` block, snake_case as it comes off the wire. */
+interface OpsTwin {
+  factors: TwinBlock["factors"];
+  attribution: TwinBlock["attribution"];
+  sensor_faults: TwinSensorFault[];
+  causes: TwinBlock["causes"];
+  no_fault: number;
+  hypotheses: Record<string, number>;
+  cyl_dev: (number | null)[];
+  time_to_limit: Record<string, number>;
+  limiting_channel: string | null;
+  hot_takeoff: { channel: string; margin: number };
+  unexplained: number;
+  window_s: number;
+  compute_ms: number;
+  t_s: number;
+}
+
 interface OpsMlResult {
   health_score: number;
-  subsystem_scores: Record<string, number>;
+  subsystem_scores: Record<string, number | null>;
   fault_type: string;
   confidence: number;
   anomaly: boolean;
   anomaly_score: number;
   remaining_useful_life: number | null;
   probabilities: Record<string, number>;
+  // live physics twin (absent from an older simulator build)
+  nominal?: Record<string, number>;
+  residual_z?: Record<string, number>;
+  twin?: OpsTwin;
+}
+
+function toTwinBlock(t: OpsTwin): TwinBlock {
+  return {
+    factors: t.factors,
+    attribution: t.attribution,
+    sensorFaults: t.sensor_faults,
+    causes: t.causes,
+    noFault: t.no_fault,
+    hypotheses: t.hypotheses,
+    cylDev: t.cyl_dev,
+    timeToLimit: t.time_to_limit,
+    limitingChannel: t.limiting_channel,
+    hotTakeoff: t.hot_takeoff,
+    unexplained: t.unexplained,
+    windowS: t.window_s,
+    computeMs: t.compute_ms,
+    t: t.t_s,
+  };
 }
 
 export class OpsClient {
@@ -346,9 +390,11 @@ export class OpsClient {
    * scripted power changes.
    */
   private isAssessing(phase: string): boolean {
+    // No post-power-change blackout any more: the live twin fits the engine's own
+    // lag dynamics, so a climb or a throttle step is modelled rather than waited out.
+    // TRANSITION_GRACE_SEC still delays ENTERING the faulted verdict (updateVerdict).
     if (!this.latestMl) return true;
-    if (UNSTABLE_PHASES.has(phase.toLowerCase())) return true;
-    return this.latestSimT - this.lastAutopilotSimT < TRANSITION_GRACE_SEC;
+    return UNSTABLE_PHASES.has(phase.toLowerCase());
   }
 
   private updateVerdict(ml: OpsMlResult) {
@@ -369,6 +415,9 @@ export class OpsClient {
    */
   private currentLabel(ml: OpsMlResult | null): string {
     if (!this.faulted || !ml?.probabilities) return "healthy";
+    // The live twin decides its own headline (an engine change outranks a distrusted
+    // sensor, which is still reported in sensorFault). Use it whenever it names a fault.
+    if (ml.twin && ml.fault_type !== "healthy" && ml.fault_type in ml.probabilities) return ml.fault_type;
     let best: string | null = null;
     let bestP = -1;
     for (const [k, v] of Object.entries(ml.probabilities)) {
@@ -433,14 +482,11 @@ export class OpsClient {
     const labelP = ml?.probabilities?.[label];
     const confidence = assessing ? 0 : typeof labelP === "number" ? labelP : label === "healthy" ? 1 : 0;
 
-    let sensorFault: DiagnosisBlock["sensorFault"] = { channel: null, mode: null, confidence: 0 };
-    for (const part of label.split("+")) {
-      const spec = SENSOR_FAULT_BY_ID.get(part);
-      if (spec) {
-        sensorFault = { channel: spec.channel, mode: spec.mode, confidence };
-        break;
-      }
-    }
+    // M1's own verdict, not a label parsed back apart: which channel it distrusts, and how.
+    const sf = assessing ? undefined : ml?.twin?.sensor_faults?.[0];
+    const sensorFault: DiagnosisBlock["sensorFault"] = sf
+      ? { channel: sf.channel, mode: sf.mode, confidence: sf.confidence }
+      : { channel: null, mode: null, confidence: 0 };
     const cylMatch = /_cyl(\d)/.exec(label);
 
     const diagnosis: DiagnosisBlock = {
@@ -461,12 +507,14 @@ export class OpsClient {
     // the number and presented it as though it had been measured. runManager
     // fills the band in from the reliability engine's Monte Carlo crossing-time
     // distribution, which is an actual distribution.
-    const rul = ml?.remaining_useful_life ?? null;
+    // M5: seconds until a thermal redline if the current power is held, from the
+    // fitted health factors (physics forward model), not a health-score trend.
+    const rul = assessing ? null : ml?.remaining_useful_life ?? null;
     const prognosis: PrognosisBlock = {
       rulSec: rul,
       rulLoSec: null,
       rulHiSec: null,
-      basis: rul !== null ? "ml_rul_extrapolation" : "no_projection",
+      basis: rul !== null ? `twin_time_to_limit:${ml?.twin?.limiting_channel ?? "?"}` : "no_projection",
     };
 
     // server_ops has its own player-mission scoring (grade/score/fail_reason)
@@ -487,18 +535,17 @@ export class OpsClient {
       phase,
       sensors,
       context,
-      // Not exposed by the real predict() contract (ML_BACKEND_HANDOFF.md
-      // §4) — it returns health/diagnosis/prognosis, not per-channel
-      // predicted values or z-scores. SensorGrid already renders "no data"
-      // for a missing residualZ entry rather than breaking.
-      nominal: {},
-      residualZ: {},
+      // What a HEALTHY engine would read right now, and how far each channel sits
+      // from it (block-mean sigma) — from the live twin. Empty while assessing.
+      nominal: assessing ? {} : ml?.nominal ?? {},
+      residualZ: assessing ? {} : ml?.residual_z ?? {},
       health,
       diagnosis,
       prognosis,
       mission: PENDING_MISSION, // replaced by ReliabilityEngine in runManager.finishTick()
       alerts: [], // filled in by AlertEngine in runManager, same as the stub path
       injectedFaults: this.injectedFaults(),
+      twin: assessing || !ml?.twin ? null : toTwinBlock(ml.twin),
     };
   }
 }

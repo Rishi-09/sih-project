@@ -1,7 +1,13 @@
 """
-OpsEngineSim: 4-Layer Rotax 915 iS Engine Simulator for the 2D Engine Operations Game.
-Uses the existing simulator physics modules (NominalSensorModel, SensorLagBank, FaultManager, CorrelatedNoiseEngine)
-with sub-second fractional dt support.
+OpsEngineSim: real-time Rotax 915 iS simulator behind the live console.
+
+Layers, per step (fractional dt, 20 Hz):
+  1. flight context (OpsContextGenerator)
+  2. healthy steady-state targets (simulator NominalSensorModel)
+  3. engine faults as physical health factors (twin2 physics.apply_health) -
+     the same physics the live twin estimates back from the telemetry
+  4. thermal / hydraulic lags, correlated noise, ADC quantization, CAN hold
+  5. sensor faults (twin2 LiveFaultState.corrupt) - readings only, engine untouched
 """
 
 from typing import Dict, Any, Optional, List
@@ -12,7 +18,9 @@ from simulator.config import (
 )
 from simulator.sensors import NominalSensorModel
 from simulator.thermal import SensorLagBank, CorrelatedNoiseEngine
-from simulator.faults import FaultManager
+from twin2.live_faults import LiveFaultState
+from twin2.models.m4_m5_m6 import time_to_limit
+from twin2.physics import apply_health
 from .ops_context import OpsContextGenerator
 
 
@@ -36,35 +44,25 @@ class OpsEngineSim:
         self.sensor_model = NominalSensorModel(self.cfg)
         self.lag_bank = SensorLagBank()
         self.noise_engine = CorrelatedNoiseEngine(seed=seed)
-        self.fault_mgr = FaultManager(self.cfg)
+        self.faults = LiveFaultState(seed=seed)
 
     def set_player_input(self, control_data: Dict[str, Any]):
         """Forward real-time flight commands to context generator."""
         self.context_gen.set_player_input(control_data)
 
     def inject_fault(self, fault: str, severity: float, onset_delay: float = 0.0):
-        """Inject any of the 10 Rotax failure modes with fast immediate onset."""
-        self.fault_mgr.inject_fault(
-            fault_type=fault,
-            severity=severity,
-            current_time_s=self.t_s,
-            onset_delay=onset_delay
-        )
-        # Accelerate ramp duration on active faults so the player sees the effect immediately
-        for active in self.fault_mgr.active_faults:
-            if active.fault_type == fault:
-                for profile in active.profiles.values():
-                    profile.ramp_duration_s = min(2.0, profile.ramp_duration_s)
-                    profile.delay_s = 0.0
+        """Inject a catalog fault (twin2/catalog.py). Unknown ids raise ValueError."""
+        self.faults.inject(fault, severity, self.t_s, onset_delay)
 
     def clear_faults(self):
-        """Reset fault manager to healthy nominal state."""
-        self.fault_mgr = FaultManager(self.cfg)
-        self.is_initialized = False # Force lag filters to re-anchor to healthy baseline
+        """Remove every fault. Health factors return to healthy at once and the
+        readings recover through the engine's own thermal lags, as a repaired
+        engine would - no re-anchoring jump in the telemetry."""
+        self.faults.clear()
 
     def get_state(self) -> Dict[str, Any]:
-        """Return ground-truth fault status and RUL projection."""
-        return self.fault_mgr.get_state(self.t_s)
+        """Ground-truth fault status (what was injected, not what the twin inferred)."""
+        return self.faults.state(self.t_s)
 
     def check_redline_violations(self, sensors: Dict[str, float]) -> List[Dict[str, Any]]:
         """Identify which sensor channels have exceeded safe operating redline thresholds."""
@@ -102,8 +100,12 @@ class OpsEngineSim:
         context = self.context_gen.step(dt=dt)
         self.t_s = context["t_s"]
 
-        # 2. Compute Nominal Steady-State Targets
-        nominal_targets = self.sensor_model.compute_nominal_targets(context)
+        # 2. Healthy steady-state targets, then the engine's true health (engine faults)
+        healthy = self.sensor_model.compute_nominal_targets(context)
+        theta = self.faults.theta(self.t_s)
+        degraded = apply_health({k: np.array([v]) for k, v in healthy.items()},
+                                np.array([context["throttle_pct"]]), theta)
+        nominal_targets = {k: float(v[0]) for k, v in degraded.items()}
 
         # Initialize lag filters on first step
         if not self.is_initialized:
@@ -119,8 +121,7 @@ class OpsEngineSim:
         # Apply Thermal & Hydraulic Lag Dynamics
         lagged_sensors = self.lag_bank.apply(nominal_targets, context=context)
 
-        # 3. Apply Fault Overlay
-        faulted_sensors = self.fault_mgr.apply_faults(self.t_s, lagged_sensors)
+        faulted_sensors = lagged_sensors
 
         # 4. Add Correlated Sensor Noise & Realism
         current_rpm = float(faulted_sensors.get("rpm", 5000.0))
@@ -175,9 +176,17 @@ class OpsEngineSim:
             final_val = self.noise_engine.check_can_dropout(ch, quantized_val)
             final_sensors[ch] = round(float(final_val), 3)
 
-        # 5. Compute Ground Truth RUL / Redline Status
-        fault_state = self.fault_mgr.get_state(self.t_s)
-        t_to_redline = self.fault_mgr.compute_t_to_redline(self.t_s, lagged_sensors)
+        # 5. Sensor faults corrupt readings only
+        final_sensors = self.faults.corrupt(final_sensors, self.t_s)
+
+        # 6. Ground truth: time to a thermal redline if this power is held, from the TRUE health
+        fault_state = self.faults.state(self.t_s)
+        t_to_redline = None
+        if fault_state["active_faults"]:
+            ttl = time_to_limit(theta, lagged_sensors, float(context["throttle_pct"]), float(context["alt_m"]),
+                                float(context["oat_c"]), float(context["ias_kt"]), str(context["phase"]))
+            finite = [v for v in ttl.values() if v is not None]
+            t_to_redline = min(finite) if finite else None
         violations = self.check_redline_violations(final_sensors)
 
         frame: Dict[str, Any] = {
@@ -199,6 +208,7 @@ class OpsEngineSim:
             "autopilot": bool(context.get("autopilot", False)),
             "ap_target_alt": round(float(context.get("ap_target_alt", 1500.0)), 1),
             "biome_id": str(context["biome_id"]),
+            "vib_extra": float(context.get("vib_extra", 0.0)),  # storm turbulence the twin must expect
             "biome_name": str(context["biome_name"]),
             "redline_violations": violations,
         }
