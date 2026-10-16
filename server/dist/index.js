@@ -12,7 +12,7 @@ const runs_1 = require("./routes/runs");
 const runManager_1 = require("./twin/runManager");
 const engines_1 = require("./routes/engines");
 const app = (0, express_1.default)();
-app.use((0, cors_1.default)({ origin: config_1.config.corsOrigin }));
+app.use((0, cors_1.default)({ origin: true, credentials: true }));
 app.use(express_1.default.json());
 const httpServer = http_1.default.createServer(app);
 const io = (0, gateway_1.createSocketGateway)(httpServer);

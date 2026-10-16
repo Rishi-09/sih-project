@@ -8,7 +8,7 @@ import { reapOrphanedRuns } from "./twin/runManager";
 import { enginesRouter } from "./routes/engines";
 
 const app = express();
-app.use(cors({ origin: config.corsOrigin }));
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
 const httpServer = http.createServer(app);
